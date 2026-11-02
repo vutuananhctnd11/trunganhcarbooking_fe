@@ -1,12 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import VehicleShowcase from '../../components/VehicleShowcase';
 import CampaignBanner from '../../components/CampaignBanner';
 import VietmapBookingDemo from '../../components/VietmapBookingDemo';
 import PricingAndDrivers from '../../components/PricingAndDrivers';
+import DriverAuthModal from '../components/DriverAuthModal';
+import { driverService } from '../services/driverService';
 
 export default function HomePage() {
   const [selectedDriverId, setSelectedDriverId] = useState('1');
+  const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
+  const [currentDriver, setCurrentDriver] = useState(null);
+  const [urgentTripsCount, setUrgentTripsCount] = useState(0);
+
+  useEffect(() => {
+    const driver = driverService.getCurrentDriver();
+    setCurrentDriver(driver);
+    if (driver) {
+      const urgent = driverService.getImminentTrips(driver.id);
+      setUrgentTripsCount(urgent.length);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-red-600 selection:text-white">
       {/* Thanh Header / Navigation bar */}
@@ -32,19 +47,66 @@ export default function HomePage() {
             </div>
           </Link>
 
-          {/* Hotline & Liên hệ */}
-          <div className="flex items-center gap-2.5 sm:gap-4">
+          {/* Hotline & Khu vực Tài xế */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Nút dành cho Tài xế */}
+            {currentDriver ? (
+              <Link
+                to="/driver/schedule"
+                className="relative flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full bg-gradient-to-r from-red-950/80 to-slate-900 border border-red-700/80 hover:border-red-500 text-xs sm:text-sm text-white shadow-md hover:shadow-red-900/40 transition-all no-underline group"
+              >
+                <img
+                  src={currentDriver.avatar}
+                  alt={currentDriver.name}
+                  className="w-5 h-5 sm:w-6 sm:h-6 rounded-full object-cover border border-red-400"
+                />
+                <span className="font-bold text-red-300 group-hover:text-white truncate max-w-[90px] sm:max-w-none">
+                  {currentDriver.name}
+                </span>
+                <span className="hidden md:inline text-xs text-slate-400">• Lịch trình 30 ngày</span>
+
+                {/* Badge thông báo nếu có chuyến sắp chạy */}
+                {urgentTripsCount > 0 && (
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping absolute -top-1 -right-1" />
+                )}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsDriverModalOpen(true)}
+                className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full bg-slate-900 border border-red-800/60 hover:border-red-500 text-xs sm:text-sm text-slate-200 hover:text-white shadow-md hover:shadow-red-900/40 transition-all cursor-pointer"
+              >
+                <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="font-bold text-red-300">Tài Xế</span>
+                <span className="hidden sm:inline text-slate-400 text-xs">Đăng nhập / Đăng ký</span>
+              </button>
+            )}
+
+            {/* Hotline 24/7 */}
             <a
               href="tel:0362.882.882"
-              className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-slate-900/90 border border-slate-700/80 hover:border-red-500 text-xs sm:text-sm text-slate-200 shadow-md hover:shadow-red-900/30 transition-all duration-200 no-underline"
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full bg-slate-900/90 border border-slate-700/80 hover:border-red-500 text-xs sm:text-sm text-slate-200 shadow-md hover:shadow-red-900/30 transition-all duration-200 no-underline"
             >
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="hidden sm:inline text-slate-400 font-medium">Hotline 24/7:</span>
+              <span className="hidden lg:inline text-slate-400 font-medium">Hotline:</span>
               <span className="font-bold text-red-400 tracking-wide">0362.882.882</span>
             </a>
           </div>
         </div>
       </header>
+
+      {/* Modal Đăng nhập / Đăng ký Tài xế */}
+      <DriverAuthModal
+        isOpen={isDriverModalOpen}
+        onClose={() => setIsDriverModalOpen(false)}
+        onLoginSuccess={(driver) => {
+          setCurrentDriver(driver);
+          const urgent = driverService.getImminentTrips(driver.id);
+          setUrgentTripsCount(urgent.length);
+        }}
+      />
 
       {/* Banner Quảng Cáo Chiến Dịch Ưu Đãi (Preview Campaign Banner) */}
       <section aria-label="Chiến dịch ưu đãi">
@@ -96,7 +158,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* KHỐI ĐẶT XE CHÍNH: BẢN ĐỒ VIETMAP + FORM 2 CỘT TÍNH GIÁ & ĐẶT LỊCH (Thay thế form cũ và map cũ) */}
+          {/* KHỐI ĐẶT XE CHÍNH: BẢN ĐỒ VIETMAP + FORM 2 CỘT TÍNH GIÁ & ĐẶT LỊCH */}
           <div id="booking-section" className="mb-14 scroll-mt-24">
             <VietmapBookingDemo initialDriverId={selectedDriverId} />
           </div>

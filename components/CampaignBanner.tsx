@@ -10,24 +10,26 @@ export interface CampaignSlide {
   image: string;
   alt: string;
   actionText?: string;
+  isGraphicBanner?: boolean;
 }
 
 const CAMPAIGN_SLIDES: CampaignSlide[] = [
   {
     id: 1,
-    title: 'Đón Tiễn Sân Bay Nội Bài Trọn Gói',
-    tagline: 'Chỉ từ 250.000đ • Xe VinFast đỏ sang trọng, cốp rộng rãi đón trả tận sảnh nhà ga T1/T2',
-    badge: 'ƯU ĐÃI ĐẶC BIỆT',
-    image: 'https://images.unsplash.com/photo-1542362567-b07e54358753?auto=format&fit=crop&w=1600&q=80',
-    alt: 'Chiến dịch đưa đón sân bay xe điện VinFast Trung Anh',
-    actionText: 'Đặt xe sân bay ngay',
+    title: 'Trực Ninh ⇄ Nội Bài - Chỉ 900K',
+    tagline: 'Đặt xe VinFast Limo Green trọn gói 900k/chuyến (Bao trọn xe) • Đón trả tận nơi',
+    badge: 'HOT DEAL 900K',
+    image: '/banner_truc_ninh_noi_bai.png',
+    alt: 'Đặt xe VinFast Limo Green từ Trực Ninh đến Nội Bài chỉ 900k Trung Anh Car',
+    actionText: 'Đặt xe đi sân bay ngay',
+    isGraphicBanner: true,
   },
   {
     id: 2,
     title: 'Hành Trình Du Lịch & Về Quê Êm Ái',
     tagline: 'Không gian tĩnh lặng, không mùi say xe • Cả gia đình thoải mái suốt chuyến đi xa',
     badge: 'GIA ĐÌNH YÊU THÍCH',
-    image: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1600&q=80',
+    image: 'https://mediagiaothong.tapchixaydung.vn/mediav2/upload/giaothong/tapchigiaothong.qltns.mediacdn.vn/481400261263945728/2025/3/31/vinfast-limo-green-1743431109130226245032.jpg',
     alt: 'Chiến dịch xe gia đình về quê du lịch',
     actionText: 'Xem báo giá đường dài',
   },
@@ -36,7 +38,7 @@ const CAMPAIGN_SLIDES: CampaignSlide[] = [
     title: 'Phục Vụ Sự Kiện & Gặp Gỡ Đối Tác',
     tagline: 'Tài xế lịch thiệp, đón đúng giờ 100% • Nâng tầm hình ảnh chuyên nghiệp',
     badge: 'DOANH NHÂN & CÔNG TÁC',
-    image: 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&w=1600&q=80',
+    image: 'https://vinfastauto-danang.vn/wp-content/uploads/2025/03/vinfast-limo-green-250303-06-1200.jpg',
     alt: 'Chiến dịch xe phục vụ hội nghị và sự kiện',
     actionText: 'Liên hệ đặt lịch hẹn',
   },
@@ -80,54 +82,91 @@ export default function CampaignBanner() {
         onMouseLeave={() => setIsPaused(false)}
       >
         {/* Banner Image Container */}
-        <div className="relative h-[220px] sm:h-[340px] md:h-[400px] lg:h-[440px] w-full overflow-hidden">
+        <div
+          className={`relative aspect-[16/9] max-h-[520px] w-full overflow-hidden select-none ${
+            currentSlide.isGraphicBanner ? 'cursor-pointer' : ''
+          }`}
+          onClick={currentSlide.isGraphicBanner ? handleScrollToBooking : undefined}
+          title={currentSlide.isGraphicBanner ? 'Nhấn để đặt xe ngay' : undefined}
+        >
           <img
             src={currentSlide.image}
             alt={currentSlide.alt}
-            className="w-full h-full object-cover object-center transition-all duration-700 ease-out transform group-hover:scale-105"
+            className="w-full h-full object-cover object-center transition-all duration-700 ease-out transform group-hover:scale-[1.01]"
           />
 
-          {/* Lớp Overlay Gradient chuẩn tông Titan & Crimson */}
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/70 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-black/30" />
+          {/* Lớp Overlay Gradient */}
+          {currentSlide.isGraphicBanner ? (
+            /* Banner đồ họa có sẵn chữ quảng cáo: giữ sáng rõ 100%, không phủ lớp đen dày làm tối thông tin */
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/25 via-transparent to-transparent pointer-events-none" />
+          ) : (
+            /* Banner ảnh thông thường: overlay dịu nhẹ để làm nổi bật ảnh và chữ dễ đọc */
+            <>
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/80 via-slate-950/40 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-black/20 pointer-events-none" />
+            </>
+          )}
 
           {/* Nội dung Banner chiến dịch */}
-          <div className="absolute inset-0 flex flex-col justify-end sm:justify-center p-6 sm:p-10 md:p-14 max-w-2xl z-10">
-            {/* Badge chiến dịch */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600 text-white text-[11px] sm:text-xs font-bold tracking-wider uppercase mb-3 shadow-lg shadow-red-900/50 border border-red-400/40 w-fit">
-              <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-              <span>{currentSlide.badge}</span>
-            </div>
-
-            {/* Tiêu đề & Tagline */}
-            <h2 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-tight drop-shadow-md">
-              {currentSlide.title}
-            </h2>
-            <p className="text-xs sm:text-base text-slate-200 mt-2 sm:mt-3 leading-relaxed drop-shadow max-w-xl">
-              {currentSlide.tagline}
-            </p>
-
-            {/* Nút Call To Action */}
-            <div className="mt-4 sm:mt-6 flex items-center gap-3">
+          {currentSlide.isGraphicBanner ? (
+            /* Dành cho banner đồ họa: nút CTA đặt ở góc trên bên phải (khu vực thoáng, không che chữ hay hotline) */
+            <div className="absolute top-3 right-12 sm:top-5 sm:right-16 z-10 flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleScrollToBooking}
-                className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs sm:text-sm font-bold shadow-xl shadow-red-900/50 hover:shadow-red-800/70 active:scale-95 transition-all duration-200 flex items-center gap-2 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleScrollToBooking();
+                }}
+                className="px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs sm:text-sm font-bold shadow-xl shadow-red-950/70 hover:shadow-red-800/80 active:scale-95 transition-all duration-200 flex items-center gap-2 cursor-pointer border border-white/20"
               >
-                <span>{currentSlide.actionText || 'Đặt chuyến ngay'}</span>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <span>{currentSlide.actionText || 'Đặt xe ngay'}</span>
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
               </button>
             </div>
-          </div>
+          ) : (
+            /* Dành cho banner thông thường */
+            <div className="absolute inset-0 flex flex-col justify-end sm:justify-center p-6 sm:p-10 md:p-14 max-w-2xl z-10 pointer-events-none">
+              {/* Badge chiến dịch */}
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600 text-white text-[11px] sm:text-xs font-bold tracking-wider uppercase mb-3 shadow-lg shadow-red-900/50 border border-red-400/40 w-fit pointer-events-auto">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                <span>{currentSlide.badge}</span>
+              </div>
+
+              {/* Tiêu đề & Tagline */}
+              <h2 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-tight drop-shadow-md">
+                {currentSlide.title}
+              </h2>
+              <p className="text-xs sm:text-base text-slate-200 mt-2 sm:mt-3 leading-relaxed drop-shadow max-w-xl">
+                {currentSlide.tagline}
+              </p>
+
+              {/* Nút Call To Action */}
+              <div className="mt-4 sm:mt-6 flex items-center gap-3 pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={handleScrollToBooking}
+                  className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs sm:text-sm font-bold shadow-xl shadow-red-900/50 hover:shadow-red-800/70 active:scale-95 transition-all duration-200 flex items-center gap-2 cursor-pointer"
+                >
+                  <span>{currentSlide.actionText || 'Đặt chuyến ngay'}</span>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Nút lùi / tiến Banner */}
           <button
             type="button"
-            onClick={handlePrev}
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePrev();
+            }}
             aria-label="Xem chiến dịch trước"
-            className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg"
+            className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
           >
             <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
@@ -135,9 +174,12 @@ export default function CampaignBanner() {
           </button>
           <button
             type="button"
-            onClick={handleNext}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleNext();
+            }}
             aria-label="Xem chiến dịch tiếp theo"
-            className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg"
+            className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
           >
             <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
@@ -189,4 +231,3 @@ export default function CampaignBanner() {
     </div>
   );
 }
-
