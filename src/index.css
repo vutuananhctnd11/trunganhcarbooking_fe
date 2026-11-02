@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-titan-dark: #0F172A;
+  --color-crimson: #DC2626;
+  --color-cream-white: #F8FAFC;
+}
+
+body {
+  background-color: #020617;
+  color: #f8fafc;
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
