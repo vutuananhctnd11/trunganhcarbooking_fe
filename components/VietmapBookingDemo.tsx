@@ -258,9 +258,6 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
     }
   }, [initialDriverId]);
 
-  // Chọn loại xe (4, 5, 7 chỗ)
-  const [vehicleType, setVehicleType] = useState<string>('4 chỗ');
-
   const [luggageOption, setLuggageOption] = useState<string>('2 vali to');
   const [customNote, setCustomNote] = useState<string>('');
   const [isSubmittingBooking, setIsSubmittingBooking] = useState<boolean>(false);
@@ -747,7 +744,6 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
     setBookingMessage(null);
     setWaitHours(0);
     setIsRoundTrip(false);
-    setVehicleType('4 chỗ');
   };
 
   // 5. NÚT "ĐẶT LỊCH CHUYẾN ĐI": Gửi POST http://localhost:8080/api/v1/bookings
@@ -778,7 +774,7 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
 
     const formattedPickupTime = `${pickupDate}T${pickupTimeStr}:00`;
 
-    // Đúng 100% mẫu request yêu cầu kèm waitHours, driverId, vehicleType và isRoundTrip:
+    // Đúng 100% mẫu request yêu cầu kèm waitHours, driverId và isRoundTrip:
     const payload = {
       customerName: customerName.trim(),
       customerPhone: cleanPhone,
@@ -789,9 +785,6 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
       pickupTime: formattedPickupTime,
       waitHours: Number(waitHours) || 0,
       driverId: driverId,
-      vehicleType: vehicleType,
-      seatType: vehicleType,
-      seats: parseInt(vehicleType, 10) || 4,
       isRoundTrip: isRoundTrip,
       luggageOption: luggageOption,
       note: customNote,
@@ -1306,40 +1299,6 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
                 </div>
               </div>
 
-              {/* Chọn Loại xe (4, 5, 7 chỗ) */}
-              <div>
-                <label className="block text-[11px] font-medium text-slate-300 mb-1.5 flex items-center justify-between">
-                  <span>
-                    Loại xe (Số chỗ ngồi) <span className="text-red-500">*</span>
-                  </span>
-                  <span className="text-[10px] text-red-400 font-normal">Xe điện VinFast</span>
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: '4 chỗ', label: 'Xe 4 chỗ', desc: 'VF 5 / e34' },
-                    { value: '5 chỗ', label: 'Xe 5 chỗ', desc: 'VF 6 / VF 8' },
-                    { value: '7 chỗ', label: 'Xe 7 chỗ', desc: 'VF 9 / Limo' },
-                  ].map((car) => {
-                    const isSelected = vehicleType === car.value;
-                    return (
-                      <button
-                        key={car.value}
-                        type="button"
-                        onClick={() => setVehicleType(car.value)}
-                        className={`py-2 px-1.5 rounded-xl text-center border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-gradient-to-b from-red-600/30 to-red-950/70 border-red-500 text-white shadow-md shadow-red-950/60 ring-1 ring-red-500'
-                            : 'bg-slate-900 border-slate-700 hover:border-slate-600 text-slate-300'
-                        }`}
-                      >
-                        <span className="block text-xs font-bold">{car.label}</span>
-                        <span className="block text-[10px] text-slate-400 mt-0.5">{car.desc}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Chọn Tài xế phục vụ (driverId) */}
               <div>
                 <label className="block text-[11px] font-medium text-slate-300 mb-1">
@@ -1414,7 +1373,7 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
               </div>
 
               <p className="text-[10px] text-slate-500 text-center">
-                Endpoint: <code>POST http://localhost:8080/api/v1/bookings</code> (có kèm <code>vehicleType</code>, <code>waitHours</code>, <code>driverId</code> & <code>isRoundTrip</code>)
+                Endpoint: <code>POST http://localhost:8080/api/v1/bookings</code> (có kèm <code>waitHours</code>, <code>driverId</code> & <code>isRoundTrip</code>)
               </p>
             </form>
           )}
