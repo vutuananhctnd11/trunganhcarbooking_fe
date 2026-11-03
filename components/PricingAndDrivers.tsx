@@ -16,13 +16,13 @@ export interface Driver {
 export const DRIVERS_LIST: Driver[] = [
   {
     id: '1',
-    name: 'Trung Anh (Chủ xe)',
+    name: 'Trung Anh',
     phone: '0362.882.882',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
     rating: 5.0,
     tripsCount: 1420,
-    carModel: 'VinFast VF 8 Plus (Đỏ Crimson)',
-    plateNumber: '30K - 868.86',
+    carModel: 'VinFast Limo Green (đỏ)',
+    plateNumber: '35H - 182.29',
     tag: 'Được đánh giá cao nhất',
     experience: '8 năm kinh nghiệm • Lái xe cẩn thận, chu đáo',
   },
@@ -33,7 +33,7 @@ export const DRIVERS_LIST: Driver[] = [
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
     rating: 4.9,
     tripsCount: 980,
-    carModel: 'VinFast VF e34 (Limo Green Đỏ)',
+    carModel: 'VinFast VF e34 (Xanh blue)',
     plateNumber: '30L - 123.45',
     tag: 'Tài xế thân thiện, đúng giờ',
     experience: '6 năm kinh nghiệm • Thành thạo tuyến sân bay & liên tỉnh',
@@ -52,56 +52,95 @@ export const DRIVERS_LIST: Driver[] = [
   },
 ];
 
-const PRICING_PLANS = [
-  {
-    name: 'Di Chuyển Nội Thành & Ngắn',
-    subtitle: 'Lộ trình ngắn, đi làm, gặp đối tác, đi chơi gia đình',
-    basePrice: '30.500 đ',
-    baseKm: '2 km đầu tiên',
-    perKm: '14.700 đ/km (km 3-12)',
-    waitingFee: '30.000 đ/giờ (Miễn phí 30p đầu)',
-    highlight: false,
-    features: [
-      'Giá mở cửa (2 km đầu tiên): 30.500 VNĐ',
-      'Từ km 3 đến km 12: 14.700 VNĐ/km',
-      'Từ km 13 đến km 25: 13.800 VNĐ/km',
-      'Từ km 26 trở đi: chỉ 11.900 VNĐ/km',
-    ],
-  },
-  {
-    name: 'Đưa Đón Sân Bay Nội Bài',
-    subtitle: 'Chuyến bay kịp giờ, khoang cốp rộng chứa 3-4 vali lớn',
-    basePrice: '250.000 đ',
-    baseKm: 'Trọn gói từ nội thành',
-    perKm: '11.900 đ/km cự ly xa',
-    waitingFee: 'Miễn phí chờ khi delay',
-    highlight: true,
-    badge: 'ĐẶT NHIỀU NHẤT',
-    features: [
-      'Theo dõi giờ hạ cánh qua số hiệu chuyến bay',
-      'Tài xế chủ động đến sớm 10 phút hỗ trợ hành lý',
-      'Miễn phí chờ đợi khi chuyến bay bị delay',
-      'Đón trả chuẩn sảnh ga T1 (Quốc nội) & T2 (Quốc tế)',
-    ],
-  },
-  {
-    name: 'Đường Dài & Đi 2 Chiều',
-    subtitle: 'Đi tỉnh 1 chiều hoặc 2 chiều trong ngày / qua đêm',
-    basePrice: '11.900 đ/km',
-    baseKm: 'Cự ly từ km thứ 26 trở đi',
-    perKm: 'Chiều về chỉ tính 65%',
-    waitingFee: 'Thỏa thuận theo tour',
-    highlight: false,
-    features: [
-      'Đi 2 chiều: Chiều về chỉ tính 65% giá chiều đi',
-      'Tự động nhân đôi quãng đường và thời gian',
-      'Nghỉ ngơi, ngả lưng êm dịu không rung lắc',
-      'Bao trọn phí cầu đường theo thỏa thuận',
-    ],
-  },
-];
+export interface PromotionTrip {
+  id: number;
+  badgeText?: string;
+  title: string;
+  slug?: string;
+  description?: string;
+  price: number;
+  priceUnit?: string;
+  extraKmPrice?: number;
+  extraKmNote?: string;
+  waitingFeeNote?: string;
+  features: string[];
+  buttonText?: string;
+  displayOrder?: number;
+  isFeatured?: boolean;
+  isActive?: boolean;
+  pickupAddress?: string;
+  dropoffAddress?: string;
+  travelTime?: number | string;
+  pickupLng?: number;
+  pickupLat?: number;
+  dropoffLng?: number;
+  dropoffLat?: number;
+  distanceKm?: number;
+}
 
-export default function PricingAndDrivers({ onSelectDriver }: { onSelectDriver?: (driverId: string) => void }) {
+interface PricingAndDriversProps {
+  onSelectDriver?: (driverId: string) => void;
+  onSelectFixedTrip?: (tripData: any) => void;
+}
+
+export default function PricingAndDrivers({ onSelectDriver, onSelectFixedTrip }: PricingAndDriversProps) {
+  const [promotionTrips, setPromotionTrips] = React.useState<PromotionTrip[]>();
+  const [isLoadingPromotions, setIsLoadingPromotions] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    async function fetchPromotions() {
+      try {
+        setIsLoadingPromotions(true);
+        const res = await fetch('http://localhost:8080/api/v1/promotion-trips?isActive=true&page=0&size=5');
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : data?.content;
+          if (isMounted && Array.isArray(list) && list.length > 0) {
+            setPromotionTrips(list);
+          }
+        }
+      } catch (err) {
+        // Giữ DEFAULT_PROMOTION_TRIPS nếu backend offline hoặc lỗi mạng
+      } finally {
+        if (isMounted) setIsLoadingPromotions(false);
+      }
+    }
+
+    fetchPromotions();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSelectPackage = (plan: PromotionTrip) => {
+
+    const parsedTravelTime = typeof plan.travelTime === 'number'
+      ? plan.travelTime
+      : (parseInt(String(plan.travelTime || ''), 10));
+
+    const tripData = {
+      isFixedTrip: true,
+      promotionTripId: plan.id,
+      promotionTripTitle: plan.title,
+      dropoffAddress: plan.dropoffAddress,
+      distanceKm: plan.distanceKm,
+      travelTime: parsedTravelTime,
+      price: plan.price,
+      isRoundTrip: false,
+      timestamp: Date.now(),
+    };
+
+    if (onSelectFixedTrip) {
+      onSelectFixedTrip(tripData);
+    }
+
+    const bookingElement = document.getElementById('booking-section');
+    if (bookingElement) {
+      bookingElement.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const handleChooseDriver = (driverId: string) => {
     if (onSelectDriver) {
       onSelectDriver(driverId);
@@ -114,79 +153,91 @@ export default function PricingAndDrivers({ onSelectDriver }: { onSelectDriver?:
 
   return (
     <div className="w-full space-y-12">
-      {/* 1. BẢNG GIÁ CƯỚC MINH BẠCH */}
+      {/* 1. BẢNG GIÁ CƯỚC MINH BẠCH / GÓI CƯỚC PROMOTION TRIPS */}
       <section id="pricing-section">
         <div className="text-center max-w-2xl mx-auto mb-8">
           <span className="text-xs font-bold uppercase tracking-wider text-red-500 bg-red-950/60 px-3 py-1 rounded-full border border-red-800/40">
-            Minh Bạch Cước Phí
+            Chương trình khuyến mãi
           </span>
           <h2 className="text-xl sm:text-3xl font-extrabold text-white mt-2">
-            Bảng Giá Cước Xe Điện VinFast Trọn Gói
+            Bảng Giá Cước các tuyến cố định
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Giá cước tính theo lộ trình thực tế, thời gian chờ linh hoạt tính từ 0.5 giờ, không phí ẩn.
+            Giá cước tính theo chương trình khuyến mại cho điểm đón và điểm đến nhất định.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {PRICING_PLANS.map((plan, idx) => (
+          {promotionTrips?.map((plan) => (
             <div
-              key={idx}
+              key={plan.id}
               className={`rounded-2xl p-5 sm:p-6 border flex flex-col justify-between transition-all duration-300 relative ${
-                plan.highlight
+                plan.isFeatured
                   ? 'bg-gradient-to-b from-slate-900 to-red-950/40 border-red-600/80 shadow-2xl shadow-red-950/50 scale-[1.02]'
                   : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
               }`}
             >
-              {plan.badge && (
+              {plan.badgeText && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                   <span className="px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-600 text-white shadow-md">
-                    {plan.badge}
+                    {plan.badgeText}
                   </span>
                 </div>
               )}
 
               <div>
-                <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-                <p className="text-xs text-slate-400 mt-1">{plan.subtitle}</p>
+                <h3 className="text-lg font-bold text-white">{plan.title}</h3>
+                {plan.description && (
+                  <p className="text-xs text-slate-400 mt-1">{plan.description}</p>
+                )}
 
                 <div className="my-4 p-3 rounded-xl bg-slate-950/70 border border-slate-800">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-red-500">{plan.basePrice}</span>
-                    <span className="text-xs text-slate-400">/ {plan.baseKm}</span>
+                    <span className="text-2xl font-black text-red-500">
+                      {plan.price ? `${plan.price.toLocaleString('vi-VN')} đ` : 'Liên hệ'}
+                    </span>
+                    {plan.priceUnit && (
+                      <span className="text-xs text-slate-400">{plan.priceUnit}</span>
+                    )}
                   </div>
-                  <div className="mt-1 text-xs text-slate-300 flex items-center justify-between">
-                    <span>Km tiếp theo:</span>
-                    <strong className="text-slate-100">{plan.perKm}</strong>
-                  </div>
-                  <div className="mt-1 text-xs text-slate-300 flex items-center justify-between border-t border-slate-800/80 pt-1">
-                    <span>Phí thời gian chờ:</span>
-                    <strong className="text-amber-400">{plan.waitingFee}</strong>
-                  </div>
+                  {plan.extraKmNote && (
+                    <div className="mt-1 text-xs text-slate-300 flex items-center justify-between">
+                      <span>Km phát sinh:</span>
+                      <strong className="text-slate-100">{plan.extraKmNote}</strong>
+                    </div>
+                  )}
+                  {plan.waitingFeeNote && (
+                    <div className="mt-1 text-xs text-slate-300 flex items-center justify-between border-t border-slate-800/80 pt-1">
+                      <span>Phí thời gian chờ:</span>
+                      <strong className="text-amber-400">{plan.waitingFeeNote}</strong>
+                    </div>
+                  )}
                 </div>
 
-                <ul className="space-y-2 text-xs text-slate-300 mb-6">
-                  {plan.features.map((item, fIdx) => (
-                    <li key={fIdx} className="flex items-start gap-2">
-                      <svg className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                      </svg>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
+                {Array.isArray(plan.features) && plan.features.length > 0 && (
+                  <ul className="space-y-2 text-xs text-slate-300 mb-6">
+                    {plan.features.map((item, fIdx) => (
+                      <li key={fIdx} className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <button
                 type="button"
-                onClick={() => handleChooseDriver('1')}
+                onClick={() => handleSelectPackage(plan)}
                 className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  plan.highlight
+                  plan.isFeatured
                     ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/40'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
                 }`}
               >
-                <span>Chọn gói cước này</span>
+                <span>{plan.buttonText || 'Chọn gói cước này'}</span>
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
@@ -206,7 +257,7 @@ export default function PricingAndDrivers({ onSelectDriver }: { onSelectDriver?:
             Đội Ngũ Tài Xế Phục Vụ Tận Tâm
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            100% tài xế chuyên nghiệp, lịch sự, lái xe điện VinFast màu đỏ an toàn và chu đáo.
+            100% tài xế chuyên nghiệp, lịch sự, an toàn và chu đáo trên mọi hành trình!
           </p>
         </div>
 
@@ -250,7 +301,7 @@ export default function PricingAndDrivers({ onSelectDriver }: { onSelectDriver?:
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">Biển số xe:</span>
-                    <span className="font-mono font-bold text-red-400 bg-red-950/50 px-2 py-0.5 rounded border border-red-900/40">
+                    <span className="font-mono font-bold text-black bg-white px-2 py-0.5 rounded border border-black/40">
                       {driver.plateNumber}
                     </span>
                   </div>

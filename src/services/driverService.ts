@@ -13,6 +13,14 @@ export interface DriverUser {
   plateNumber: string;
   rating: number;
   totalTrips: number;
+  fullName?: string;
+  vehicleModel?: string;
+  licensePlate?: string;
+  token?: string;
+  tokenType?: string;
+  seatCount?: number;
+  experienceYears?: number;
+  isActive?: boolean;
 }
 
 export type TripStatus = 'PENDING' | 'ACCEPTED' | 'ARRIVING' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
@@ -40,6 +48,7 @@ export interface DriverTrip {
 
 const STORAGE_KEYS = {
   CURRENT_DRIVER: 'tac_current_driver',
+  AUTH_TOKEN: 'tac_driver_token',
   DRIVERS_LIST: 'tac_registered_drivers',
   TRIPS_LIST: 'tac_driver_trips_data',
 };
@@ -267,24 +276,74 @@ export const driverService = {
   },
 
   /**
-   * Đăng nhập tài xế bằng số điện thoại
+   * Đăng nhập tài xế qua Backend API (POST /api/v1/auth/driver/login)
    */
-  login(phone: string): { success: boolean; driver?: DriverUser; message?: string } {
+  async login(phone: string, password?: string): Promise<{ success: boolean; driver?: DriverUser; message?: string }> {
     const cleanPhone = phone.replace(/[^0-9]/g, '');
-    const drivers = this.getAllDrivers();
-    const found = drivers.find((d) => d.phone.replace(/[^0-9]/g, '') === cleanPhone);
 
-    if (found) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_DRIVER, JSON.stringify(found));
-      // Khởi tạo chuyến nếu chưa có
-      this.ensureTripsInitialized(found.id);
-      return { success: true, driver: found };
+    try {
+      const response = await fetch('http://localhost:8080/api/v1/auth/driver/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: cleanPhone || phone.trim(),
+          password: password || '123456',
+        }),
+      });
+
+      let responseData: any = null;
+      try {
+        responseData = await response.json();
+      } catch {}
+
+      if (response.ok && responseData?.driver) {
+        const d = responseData.driver;
+        const mappedDriver: DriverUser = {
+          id: String(d.id),
+          name: d.fullName || d.name || 'Tài xế',
+          fullName: d.fullName,
+          phone: d.phone,
+          avatar: d.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+          carModel: d.vehicleModel || 'VinFast Limo Green (VF e34)',
+          vehicleModel: d.vehicleModel,
+          plateNumber: d.licensePlate || '30K - 999.88',
+          licensePlate: d.licensePlate,
+          rating: typeof d.rating === 'number' ? d.rating : 5.0,
+          totalTrips: d.totalTrips || 0,
+          token: responseData.token,
+          tokenType: responseData.token_type || responseData.tokenType || 'Bearer',
+          seatCount: d.seatCount,
+          experienceYears: d.experienceYears,
+          isActive: d.isActive,
+        };
+
+        if (responseData.token) {
+          localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, responseData.token);
+        }
+        localStorage.setItem(STORAGE_KEYS.CURRENT_DRIVER, JSON.stringify(mappedDriver));
+        this.ensureTripsInitialized(mappedDriver.id);
+        return { success: true, driver: mappedDriver };
+      } else {
+        const errorMsg = responseData?.message || responseData?.error || `Đăng nhập thất bại (HTTP ${response.status})`;
+        return { success: false, message: errorMsg };
+      }
+    } catch (err: any) {
+      console.warn('Backend login error, checking local fallback:', err);
+      // Fallback cục bộ nếu backend offline
+      const drivers = this.getAllDrivers();
+      const found = drivers.find((d) => d.phone.replace(/[^0-9]/g, '') === cleanPhone);
+
+      if (found) {
+        localStorage.setItem(STORAGE_KEYS.CURRENT_DRIVER, JSON.stringify(found));
+        this.ensureTripsInitialized(found.id);
+        return { success: true, driver: found };
+      }
+
+      return {
+        success: false,
+        message: 'Không thể kết nối đến máy chủ backend (http://localhost:8080). Vui lòng thử lại sau.',
+      };
     }
-
-    return {
-      success: false,
-      message: 'Số điện thoại chưa được đăng ký trong hệ thống tài xế Trung Anh Car.',
-    };
   },
 
   /**
@@ -298,45 +357,104 @@ export const driverService = {
   },
 
   /**
-   * Đăng ký tài xế mới
+   * Đăng ký tài xế mới qua Backend API (POST /api/v1/auth/driver/register)
    */
-  register(data: {
-    name: string;
+  async register(data: {
+    fullName: string;
     phone: string;
-    carModel: string;
-    plateNumber: string;
-  }): { success: boolean; driver?: DriverUser; message?: string } {
+    licensePlate: string;
+    vehicleModel: string;
+    password?: string;
+  }): Promise<{ success: boolean; driver?: DriverUser; message?: string }> {
     const cleanPhone = data.phone.replace(/[^0-9]/g, '');
     if (!cleanPhone || cleanPhone.length < 9) {
       return { success: false, message: 'Số điện thoại không hợp lệ.' };
     }
 
-    const drivers = this.getAllDrivers();
-    const exists = drivers.find((d) => d.phone.replace(/[^0-9]/g, '') === cleanPhone);
-    if (exists) {
-      return { success: false, message: 'Số điện thoại này đã được đăng ký tài xế.' };
+    try {
+      const response = await fetch('http://localhost:8080/api/v1/auth/driver/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: data.fullName.trim(),
+          phone: cleanPhone,
+          licensePlate: data.licensePlate.trim(),
+          vehicleModel: data.vehicleModel.trim(),
+          password: data.password || 'MatKhauCuaToi123',
+        }),
+      });
+
+      let responseData: any = null;
+      try {
+        responseData = await response.json();
+      } catch {}
+
+      if (response.ok && responseData?.driver) {
+        const d = responseData.driver;
+        const mappedDriver: DriverUser = {
+          id: String(d.id),
+          name: d.fullName || data.fullName.trim(),
+          fullName: d.fullName || data.fullName.trim(),
+          phone: d.phone || cleanPhone,
+          avatar: d.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+          carModel: d.vehicleModel || data.vehicleModel.trim(),
+          vehicleModel: d.vehicleModel || data.vehicleModel.trim(),
+          plateNumber: d.licensePlate || data.licensePlate.trim(),
+          licensePlate: d.licensePlate || data.licensePlate.trim(),
+          rating: typeof d.rating === 'number' ? d.rating : 5.0,
+          totalTrips: 1,
+          token: responseData.token,
+          tokenType: responseData.token_type || responseData.tokenType || 'Bearer',
+          seatCount: d.seatCount,
+          isActive: d.isActive,
+        };
+
+        if (responseData.token) {
+          localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, responseData.token);
+        }
+        localStorage.setItem(STORAGE_KEYS.CURRENT_DRIVER, JSON.stringify(mappedDriver));
+
+        // Khởi tạo các chuyến mẫu cho tài xế mới
+        const trips = generateInitialTrips(mappedDriver.id);
+        this.saveAllTrips(trips);
+
+        return { success: true, driver: mappedDriver };
+      } else {
+        const errorMsg = responseData?.message || responseData?.error || `Đăng ký thất bại (HTTP ${response.status})`;
+        return { success: false, message: errorMsg };
+      }
+    } catch (err: any) {
+      console.warn('Backend register error, fallback to local register:', err);
+      // Fallback local nếu server không chạy
+      const drivers = this.getAllDrivers();
+      const exists = drivers.find((d) => d.phone.replace(/[^0-9]/g, '') === cleanPhone);
+      if (exists) {
+        return { success: false, message: 'Số điện thoại này đã được đăng ký tài xế.' };
+      }
+
+      const newDriver: DriverUser = {
+        id: 'driver_' + Date.now(),
+        name: data.fullName.trim() || 'Tài xế Trung Anh',
+        fullName: data.fullName.trim(),
+        phone: cleanPhone,
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+        carModel: data.vehicleModel.trim() || 'VinFast Limo Green (VF e34)',
+        vehicleModel: data.vehicleModel.trim(),
+        plateNumber: data.licensePlate.trim() || '30K - 888.99',
+        licensePlate: data.licensePlate.trim(),
+        rating: 5.0,
+        totalTrips: 1,
+      };
+
+      drivers.push(newDriver);
+      localStorage.setItem(STORAGE_KEYS.DRIVERS_LIST, JSON.stringify(drivers));
+      localStorage.setItem(STORAGE_KEYS.CURRENT_DRIVER, JSON.stringify(newDriver));
+
+      const trips = generateInitialTrips(newDriver.id);
+      this.saveAllTrips(trips);
+
+      return { success: true, driver: newDriver };
     }
-
-    const newDriver: DriverUser = {
-      id: 'driver_' + Date.now(),
-      name: data.name.trim() || 'Tài xế Trung Anh',
-      phone: data.phone.trim(),
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-      carModel: data.carModel.trim() || 'VinFast Limo Green (VF e34)',
-      plateNumber: data.plateNumber.trim() || '30K - 888.99',
-      rating: 5.0,
-      totalTrips: 1,
-    };
-
-    drivers.push(newDriver);
-    localStorage.setItem(STORAGE_KEYS.DRIVERS_LIST, JSON.stringify(drivers));
-    localStorage.setItem(STORAGE_KEYS.CURRENT_DRIVER, JSON.stringify(newDriver));
-
-    // Khởi tạo các chuyến mẫu cho tài xế mới
-    const trips = generateInitialTrips(newDriver.id);
-    this.saveAllTrips(trips);
-
-    return { success: true, driver: newDriver };
   },
 
   /**
@@ -345,6 +463,7 @@ export const driverService = {
   logout(): void {
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEYS.CURRENT_DRIVER);
+      localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
     }
   },
 

@@ -13,28 +13,28 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }: Dri
   const [activeTab, setActiveTab] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
 
   // State đăng nhập
-  const [phone, setPhone] = useState('0362882882');
-  const [password, setPassword] = useState('123456');
+  const [phone, setPhone] = useState('0988123456');
+  const [password, setPassword] = useState('MatKhauCuaToi123');
 
   // State đăng ký
-  const [registerName, setRegisterName] = useState('');
-  const [registerPhone, setRegisterPhone] = useState('');
-  const [registerPlate, setRegisterPlate] = useState('');
-  const [registerCarModel, setRegisterCarModel] = useState('VinFast Limo Green (VF e34)');
+  const [registerName, setRegisterName] = useState('Vũ Tuấn Anh');
+  const [registerPhone, setRegisterPhone] = useState('0988123456');
+  const [registerPlate, setRegisterPlate] = useState('30K - 999.88');
+  const [registerCarModel, setRegisterCarModel] = useState('VinFast Limo Green (VF 8)');
+  const [registerPassword, setRegisterPassword] = useState('MatKhauCuaToi123');
 
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setIsLoading(true);
 
-    setTimeout(() => {
-      const res = driverService.login(phone);
-      setIsLoading(false);
+    try {
+      const res = await driverService.login(phone, password);
       if (res.success && res.driver) {
         if (onLoginSuccess) onLoginSuccess(res.driver);
         onClose();
@@ -42,7 +42,11 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }: Dri
       } else {
         setErrorMessage(res.message || 'Đăng nhập không thành công.');
       }
-    }, 400);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Lỗi kết nối máy chủ');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleQuickLoginDefault = () => {
@@ -56,7 +60,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }: Dri
     }, 300);
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -72,16 +76,20 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }: Dri
       setErrorMessage('Vui lòng nhập biển số xe.');
       return;
     }
+    if (!registerPassword.trim()) {
+      setErrorMessage('Vui lòng nhập mật khẩu tài xế.');
+      return;
+    }
 
     setIsLoading(true);
-    setTimeout(() => {
-      const res = driverService.register({
-        name: registerName,
-        phone: registerPhone,
-        plateNumber: registerPlate,
-        carModel: registerCarModel,
+    try {
+      const res = await driverService.register({
+        fullName: registerName.trim(),
+        phone: registerPhone.trim(),
+        licensePlate: registerPlate.trim(),
+        vehicleModel: registerCarModel.trim(),
+        password: registerPassword.trim(),
       });
-      setIsLoading(false);
 
       if (res.success && res.driver) {
         if (onLoginSuccess) onLoginSuccess(res.driver);
@@ -90,7 +98,11 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }: Dri
       } else {
         setErrorMessage(res.message || 'Đăng ký tài xế thất bại.');
       }
-    }, 400);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Lỗi kết nối máy chủ');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -271,6 +283,20 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }: Dri
               />
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Mật khẩu đăng nhập
+              </label>
+              <input
+                type="password"
+                value={registerPassword}
+                onChange={(e) => setRegisterPassword(e.target.value)}
+                placeholder="VD: MatKhauCuaToi123"
+                required
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-red-500 transition-colors"
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
@@ -295,6 +321,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }: Dri
                   onChange={(e) => setRegisterCarModel(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-red-500 transition-colors"
                 >
+                  <option value="VinFast Limo Green (VF 8)">VinFast Limo Green (VF 8)</option>
                   <option value="VinFast Limo Green (VF e34)">VinFast Limo Green (VF e34)</option>
                   <option value="VinFast VF 8 Plus Đỏ">VinFast VF 8 Plus</option>
                   <option value="VinFast VF 5 Plus">VinFast VF 5 Plus</option>

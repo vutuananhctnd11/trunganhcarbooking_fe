@@ -10,28 +10,37 @@ export interface CampaignSlide {
   image: string;
   alt: string;
   actionText?: string;
+  actionUrl?: string;
   isGraphicBanner?: boolean;
+  displayOrder?: number;
+  status?: string;
 }
 
-const CAMPAIGN_SLIDES: CampaignSlide[] = [
+export const CAMPAIGN_SLIDES: CampaignSlide[] = [
   {
     id: 1,
     title: 'Trực Ninh ⇄ Nội Bài - Chỉ 900K',
     tagline: 'Đặt xe VinFast Limo Green trọn gói 900k/chuyến (Bao trọn xe) • Đón trả tận nơi',
     badge: 'HOT DEAL 900K',
-    image: '/banner_truc_ninh_noi_bai.png',
+    image: 'https://res.cloudinary.com/dzueehiwb/image/upload/v1793693689/banner_truc_ninh_noi_bai_zwoaat.png',
     alt: 'Đặt xe VinFast Limo Green từ Trực Ninh đến Nội Bài chỉ 900k Trung Anh Car',
     actionText: 'Đặt xe đi sân bay ngay',
+    actionUrl: '/booking?route=truc-ninh-noi-bai',
     isGraphicBanner: true,
+    displayOrder: 1,
+    status: 'ACTIVE',
   },
   {
     id: 2,
     title: 'Hành Trình Du Lịch & Về Quê Êm Ái',
     tagline: 'Không gian tĩnh lặng, không mùi say xe • Cả gia đình thoải mái suốt chuyến đi xa',
     badge: 'GIA ĐÌNH YÊU THÍCH',
-    image: 'https://mediagiaothong.tapchixaydung.vn/mediav2/upload/giaothong/tapchigiaothong.qltns.mediacdn.vn/481400261263945728/2025/3/31/vinfast-limo-green-1743431109130226245032.jpg',
+    image: 'https://res.cloudinary.com/dzueehiwb/image/upload/v1793692013/photo_2026-11-02_23-00-22_jsarg5.jpg',
     alt: 'Chiến dịch xe gia đình về quê du lịch',
     actionText: 'Xem báo giá đường dài',
+    actionUrl: '/booking?route=du-lich-ve-que',
+    displayOrder: 2,
+    status: 'ACTIVE',
   },
   {
     id: 3,
@@ -41,30 +50,69 @@ const CAMPAIGN_SLIDES: CampaignSlide[] = [
     image: 'https://vinfastauto-danang.vn/wp-content/uploads/2025/03/vinfast-limo-green-250303-06-1200.jpg',
     alt: 'Chiến dịch xe phục vụ hội nghị và sự kiện',
     actionText: 'Liên hệ đặt lịch hẹn',
+    actionUrl: '/booking?route=su-kien-doi-tac',
+    displayOrder: 3,
+    status: 'ACTIVE',
   },
 ];
 
 export default function CampaignBanner() {
+  const [slides, setSlides] = useState<CampaignSlide[]>(CAMPAIGN_SLIDES);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Tự động chuyển banner sau mỗi 5 giây nếu không hover
+  // 1. Tải danh sách banner từ API http://localhost:8080/api/v1/banners
   useEffect(() => {
-    if (isPaused) return;
+    let isMounted = true;
+    async function fetchBanners() {
+      try {
+        setIsLoading(true);
+        const res = await fetch('http://localhost:8080/api/v1/banners');
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : data?.content || [];
+          if (isMounted && Array.isArray(list) && list.length > 0) {
+            const activeList = list
+              .filter((item: any) => !item.status || item.status === 'ACTIVE')
+              .sort((a: any, b: any) => (a.displayOrder || 0) - (b.displayOrder || 0));
+
+            if (activeList.length > 0) {
+              setSlides(activeList);
+              setCurrentIdx(0);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Lỗi kết nối API banners, dùng dữ liệu mẫu dự phòng:', err);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    fetchBanners();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. Tự động chuyển banner sau mỗi 5 giây nếu không hover
+  useEffect(() => {
+    if (isPaused || slides.length <= 1) return;
     const timer = setInterval(() => {
-      setCurrentIdx((prev) => (prev + 1) % CAMPAIGN_SLIDES.length);
+      setCurrentIdx((prev) => (prev + 1) % slides.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, [isPaused]);
+  }, [isPaused, slides.length]);
 
-  const currentSlide = CAMPAIGN_SLIDES[currentIdx];
+  const currentSlide = slides[currentIdx] || slides[0] || CAMPAIGN_SLIDES[0];
 
   const handleNext = () => {
-    setCurrentIdx((prev) => (prev + 1) % CAMPAIGN_SLIDES.length);
+    setCurrentIdx((prev) => (prev + 1) % slides.length);
   };
 
   const handlePrev = () => {
-    setCurrentIdx((prev) => (prev - 1 + CAMPAIGN_SLIDES.length) % CAMPAIGN_SLIDES.length);
+    setCurrentIdx((prev) => (prev - 1 + slides.length) % slides.length);
   };
 
   const handleScrollToBooking = () => {
@@ -72,6 +120,14 @@ export default function CampaignBanner() {
     if (bookingElement) {
       bookingElement.scrollIntoView({ behavior: 'smooth' });
     }
+  };
+
+  const handleActionClick = (slide: CampaignSlide) => {
+    if (slide.actionUrl && slide.actionUrl.startsWith('http')) {
+      window.open(slide.actionUrl, '_blank');
+      return;
+    }
+    handleScrollToBooking();
   };
 
   return (
@@ -86,12 +142,12 @@ export default function CampaignBanner() {
           className={`relative aspect-[16/9] max-h-[520px] w-full overflow-hidden select-none ${
             currentSlide.isGraphicBanner ? 'cursor-pointer' : ''
           }`}
-          onClick={currentSlide.isGraphicBanner ? handleScrollToBooking : undefined}
+          onClick={currentSlide.isGraphicBanner ? () => handleActionClick(currentSlide) : undefined}
           title={currentSlide.isGraphicBanner ? 'Nhấn để đặt xe ngay' : undefined}
         >
           <img
             src={currentSlide.image}
-            alt={currentSlide.alt}
+            alt={currentSlide.alt || currentSlide.title}
             className="w-full h-full object-cover object-center transition-all duration-700 ease-out transform group-hover:scale-[1.01]"
           />
 
@@ -115,7 +171,7 @@ export default function CampaignBanner() {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleScrollToBooking();
+                  handleActionClick(currentSlide);
                 }}
                 className="px-3.5 py-1.5 sm:px-5 sm:py-2.5 rounded-full bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs sm:text-sm font-bold shadow-xl shadow-red-950/70 hover:shadow-red-800/80 active:scale-95 transition-all duration-200 flex items-center gap-2 cursor-pointer border border-white/20"
               >
@@ -129,24 +185,28 @@ export default function CampaignBanner() {
             /* Dành cho banner thông thường */
             <div className="absolute inset-0 flex flex-col justify-end sm:justify-center p-6 sm:p-10 md:p-14 max-w-2xl z-10 pointer-events-none">
               {/* Badge chiến dịch */}
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600 text-white text-[11px] sm:text-xs font-bold tracking-wider uppercase mb-3 shadow-lg shadow-red-900/50 border border-red-400/40 w-fit pointer-events-auto">
-                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                <span>{currentSlide.badge}</span>
-              </div>
+              {currentSlide.badge && (
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600 text-white text-[11px] sm:text-xs font-bold tracking-wider uppercase mb-3 shadow-lg shadow-red-900/50 border border-red-400/40 w-fit pointer-events-auto">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                  <span>{currentSlide.badge}</span>
+                </div>
+              )}
 
               {/* Tiêu đề & Tagline */}
               <h2 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight leading-tight drop-shadow-md">
                 {currentSlide.title}
               </h2>
-              <p className="text-xs sm:text-base text-slate-200 mt-2 sm:mt-3 leading-relaxed drop-shadow max-w-xl">
-                {currentSlide.tagline}
-              </p>
+              {currentSlide.tagline && (
+                <p className="text-xs sm:text-base text-slate-200 mt-2 sm:mt-3 leading-relaxed drop-shadow max-w-xl">
+                  {currentSlide.tagline}
+                </p>
+              )}
 
               {/* Nút Call To Action */}
               <div className="mt-4 sm:mt-6 flex items-center gap-3 pointer-events-auto">
                 <button
                   type="button"
-                  onClick={handleScrollToBooking}
+                  onClick={() => handleActionClick(currentSlide)}
                   className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-xs sm:text-sm font-bold shadow-xl shadow-red-900/50 hover:shadow-red-800/70 active:scale-95 transition-all duration-200 flex items-center gap-2 cursor-pointer"
                 >
                   <span>{currentSlide.actionText || 'Đặt chuyến ngay'}</span>
@@ -159,41 +219,45 @@ export default function CampaignBanner() {
           )}
 
           {/* Nút lùi / tiến Banner */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePrev();
-            }}
-            aria-label="Xem chiến dịch trước"
-            className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
-          >
-            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleNext();
-            }}
-            aria-label="Xem chiến dịch tiếp theo"
-            className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
-          >
-            <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
+          {slides.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrev();
+                }}
+                aria-label="Xem chiến dịch trước"
+                className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNext();
+                }}
+                aria-label="Xem chiến dịch tiếp theo"
+                className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-950/70 hover:bg-red-600 text-white backdrop-blur-md flex items-center justify-center transition-all duration-200 border border-slate-700/60 hover:border-red-500 hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
+              >
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Thanh điều hướng Dots & Preview Thumbnail */}
         <div className="p-3 sm:p-4 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between gap-4">
           {/* Thumbnails preview chiến dịch */}
           <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto">
-            {CAMPAIGN_SLIDES.map((slide, idx) => (
+            {slides.map((slide, idx) => (
               <button
-                key={slide.id}
+                key={slide.id || idx}
                 type="button"
                 onClick={() => setCurrentIdx(idx)}
                 className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg border text-left transition-all duration-200 flex-shrink-0 cursor-pointer ${
@@ -213,19 +277,21 @@ export default function CampaignBanner() {
           </div>
 
           {/* Dots Indicator */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {CAMPAIGN_SLIDES.map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setCurrentIdx(idx)}
-                aria-label={`Chuyển tới slide ${idx + 1}`}
-                className={`h-2 rounded-full transition-all duration-300 ${
-                  currentIdx === idx ? 'w-6 bg-red-600' : 'w-2 bg-slate-700 hover:bg-slate-500'
-                }`}
-              />
-            ))}
-          </div>
+          {slides.length > 1 && (
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {slides.map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setCurrentIdx(idx)}
+                  aria-label={`Chuyển tới slide ${idx + 1}`}
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    currentIdx === idx ? 'w-6 bg-red-600' : 'w-2 bg-slate-700 hover:bg-slate-500'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

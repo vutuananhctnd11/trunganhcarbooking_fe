@@ -9,6 +9,7 @@ import { driverService } from '../services/driverService';
 
 export default function HomePage() {
   const [selectedDriverId, setSelectedDriverId] = useState('1');
+  const [fixedTripData, setFixedTripData] = useState(null);
   const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [currentDriver, setCurrentDriver] = useState(null);
   const [urgentTripsCount, setUrgentTripsCount] = useState(0);
@@ -160,12 +161,18 @@ export default function HomePage() {
 
           {/* KHỐI ĐẶT XE CHÍNH: BẢN ĐỒ VIETMAP + FORM 2 CỘT TÍNH GIÁ & ĐẶT LỊCH */}
           <div id="booking-section" className="mb-14 scroll-mt-24">
-            <VietmapBookingDemo initialDriverId={selectedDriverId} />
+            <VietmapBookingDemo
+              initialDriverId={selectedDriverId}
+              fixedTripData={fixedTripData}
+            />
           </div>
 
           {/* BẢNG GIÁ DỊCH VỤ VÀ DANH SÁCH TÀI XẾ */}
           <div className="mt-12 pt-10 border-t border-slate-800">
-            <PricingAndDrivers onSelectDriver={(id) => setSelectedDriverId(id)} />
+            <PricingAndDrivers
+              onSelectDriver={(id) => setSelectedDriverId(id)}
+              onSelectFixedTrip={(trip) => setFixedTripData(trip)}
+            />
           </div>
 
           {/* SHOWCASE XE VINFAST MÀU ĐỎ THỰC TẾ */}

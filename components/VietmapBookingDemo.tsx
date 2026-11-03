@@ -153,7 +153,38 @@ const FALLBACK_PLACES = [
   { name: 'Trung tâm Hội nghị Quốc gia', address: '57 Phạm Hùng, Mễ Trì, Nam Từ Liêm, Hà Nội', lat: 21.0064, lng: 105.7836 },
 ];
 
-export default function VietmapBookingDemo({ initialDriverId }: { initialDriverId?: string }) {
+// Interface response API lịch hoạt động của tài xế: /api/v1/drivers/{driverId}/schedule?date={date}
+export interface DriverInfoApi {
+  id: number | string;
+  name: string;
+  vehicle?: string;
+  license_plate?: string;
+  rating?: number;
+}
+
+export interface BusyTripApi {
+  trip_id?: number | string;
+  route: string;
+  time_display: string;
+  start_time: string;
+  tralvel_time?: string | number;
+  travel_time?: string | number;
+  busy_until: string;
+}
+
+export interface DriverScheduleResponse {
+  driver: DriverInfoApi;
+  selected_date: string;
+  busy_trips: BusyTripApi[];
+  available_slots: string[];
+}
+
+export interface VietmapBookingDemoProps {
+  initialDriverId?: string;
+  fixedTripData?: any;
+}
+
+export default function VietmapBookingDemo({ initialDriverId, fixedTripData }: VietmapBookingDemoProps) {
   const navigate = useNavigate();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -161,6 +192,10 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
 
   const pickupMarkerRef = useRef<any>(null);
   const dropoffMarkerRef = useRef<any>(null);
+
+  // Thông tin chuyến cố định (nếu khách chọn gói cước)
+  const [isFixedTrip, setIsFixedTrip] = useState<boolean>(false);
+  const [fixedTripInfo, setFixedTripInfo] = useState<{ id?: number; title?: string } | null>(null);
 
   // Bộ nhớ đệm cache từ khóa tìm kiếm -> Tiết kiệm request tối đa
   const searchCacheRef = useRef<Map<string, AutocompleteSuggestion[]>>(new Map());
@@ -179,6 +214,7 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
   const mapPickingModeRef = useRef<'PICKUP' | 'DROPOFF' | null>(null);
   const pickupPointRef = useRef<LocationPoint | null>(null);
   const dropoffPointRef = useRef<LocationPoint | null>(null);
+  const isFixedTripRef = useRef<boolean>(false);
 
   useEffect(() => {
     mapPickingModeRef.current = mapPickingMode;
@@ -191,6 +227,10 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
   useEffect(() => {
     dropoffPointRef.current = dropoffPoint;
   }, [dropoffPoint]);
+
+  useEffect(() => {
+    isFixedTripRef.current = isFixedTrip;
+  }, [isFixedTrip]);
 
   // Gợi ý địa chỉ
   const [pickupSuggestions, setPickupSuggestions] = useState<AutocompleteSuggestion[]>([]);
@@ -219,10 +259,14 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
   // Cập nhật lại giá tức thì khi người dùng thay đổi 2 chiều hoặc thời gian chờ
   const handleToggleRoundTrip = (checked: boolean) => {
     setIsRoundTrip(checked);
+    const nextWaitHours = checked ? waitHours : 0;
+    if (!checked) {
+      setWaitHours(0);
+    }
     if (routeResult) {
       const oneWayKm = routeResult.oneWayKm;
       const oneWayDuration = routeResult.oneWayDuration;
-      const fare = calculateFareDetails(oneWayKm, checked, waitHours);
+      const fare = calculateFareDetails(oneWayKm, checked, nextWaitHours);
       setRouteResult({
         ...routeResult,
         distanceKm: checked ? Number((oneWayKm * 2).toFixed(1)) : oneWayKm,
@@ -257,6 +301,164 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
       setDriverId(initialDriverId);
     }
   }, [initialDriverId]);
+
+  // Modal xem lịch của lái xe để tránh trùng giờ
+  const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+  const [scheduleData, setScheduleData] = useState<DriverScheduleResponse | null>(null);
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState<boolean>(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+
+  // Call API lấy lịch trình lái xe: http://localhost:8080/api/v1/drivers/{driverId}/schedule?date={date}
+  const fetchDriverSchedule = async (dId: string, dateStr: string) => {
+    setIsLoadingSchedule(true);
+    setScheduleError(null);
+    try {
+      const url = `http://localhost:8080/api/v1/drivers/${dId}/schedule?date=${encodeURIComponent(dateStr)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data: DriverScheduleResponse = await res.json();
+        setScheduleData(data);
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (err: any) {
+      // Fallback dữ liệu đúng schema API
+      const fallbackDriver = DRIVERS_LIST.find((d) => d.id === dId) || DRIVERS_LIST[0];
+      setScheduleData({
+        driver: {
+          id: dId,
+          name: fallbackDriver.name.replace(/\s*\(.*\)/, ''),
+          vehicle: fallbackDriver.carModel,
+          license_plate: fallbackDriver.plateNumber,
+          rating: fallbackDriver.rating,
+        },
+        selected_date: dateStr,
+        busy_trips: [
+          {
+            trip_id: 12,
+            route: 'Hoàn Kiếm -> Sân bay Nội Bài',
+            time_display: '08:00 - 10:00',
+            start_time: `${dateStr}T08:00:00`,
+            tralvel_time: '90',
+            busy_until: `${dateStr}T10:00:00`,
+          },
+        ],
+        available_slots: [
+          '06:00',
+          '06:30',
+          '07:00',
+          '07:30',
+          '10:00',
+          '10:30',
+          '11:00',
+          '11:30',
+          '12:00',
+          '12:30',
+          '13:00',
+        ],
+      });
+    } finally {
+      setIsLoadingSchedule(false);
+    }
+  };
+
+  // Tự động gọi API mỗi khi đổi tài xế hoặc đổi ngày đón
+  useEffect(() => {
+    if (pickupDate) {
+      fetchDriverSchedule(driverId, pickupDate);
+    }
+  }, [driverId, pickupDate]);
+
+  // Kiểm tra khung giờ trùng lịch với API schedule
+  const getConflictedSlot = () => {
+    if (!pickupTimeStr || !scheduleData?.busy_trips?.length) return null;
+    const [h, m] = pickupTimeStr.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    const pickMinutes = h * 60 + m;
+
+    for (const trip of scheduleData.busy_trips) {
+      let startMinutes = 0;
+      let endMinutes = 0;
+      let startStr = '';
+      let endStr = '';
+
+      if (trip.start_time && trip.busy_until) {
+        const startPart = trip.start_time.includes('T') ? trip.start_time.split('T')[1] : trip.start_time;
+        const endPart = trip.busy_until.includes('T') ? trip.busy_until.split('T')[1] : trip.busy_until;
+        const [sh, sm] = startPart.split(':').map(Number);
+        const [eh, em] = endPart.split(':').map(Number);
+        startMinutes = sh * 60 + sm;
+        endMinutes = eh * 60 + em;
+        startStr = startPart.slice(0, 5);
+        endStr = endPart.slice(0, 5);
+      } else if (trip.time_display && trip.time_display.includes('-')) {
+        const [s, e] = trip.time_display.split('-').map((str) => str.trim());
+        const [sh, sm] = s.split(':').map(Number);
+        const [eh, em] = e.split(':').map(Number);
+        startMinutes = sh * 60 + sm;
+        endMinutes = eh * 60 + em;
+        startStr = s;
+        endStr = e;
+      }
+
+      if (pickMinutes >= startMinutes && pickMinutes < endMinutes) {
+        return {
+          start: startStr,
+          end: endStr,
+          time_display: trip.time_display || `${startStr} - ${endStr}`,
+          route: trip.route,
+          travel_time: trip.tralvel_time || trip.travel_time,
+          title: `Chuyến bận #${trip.trip_id || ''} (${trip.route})`,
+        };
+      }
+    }
+    return null;
+  };
+
+  // Mã giảm giá
+  const [couponCode, setCouponCode] = useState<string>('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    label: string;
+  } | null>(null);
+  const [couponMessage, setCouponMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const handleApplyCoupon = () => {
+    setCouponMessage(null);
+    const cleanCode = couponCode.trim().toUpperCase();
+    if (!cleanCode) {
+      setCouponMessage({ type: 'error', text: 'Vui lòng nhập mã ưu đãi' });
+      return;
+    }
+
+    const currentBasePrice = routeResult?.estimatedPrice || 0;
+
+    if (cleanCode === 'TRUNGANH20') {
+      const discount = 20000;
+      setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: 'Giảm ngay 20.000 VNĐ' });
+      setCouponMessage({ type: 'success', text: 'Áp dụng thành công mã TRUNGANH20 (Giảm 20.000 đ)' });
+    } else if (cleanCode === 'VINFAST50') {
+      const discount = 50000;
+      setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: 'Ưu đãi xe VinFast 50.000 VNĐ' });
+      setCouponMessage({ type: 'success', text: 'Áp dụng thành công mã VINFAST50 (Giảm 50.000 đ)' });
+    } else if (cleanCode === 'XEMOI') {
+      const discount = Math.min(50000, Math.round((currentBasePrice * 0.1) / 1000) * 1000);
+      setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: 'Giảm 10% khách hàng mới' });
+      setCouponMessage({ type: 'success', text: `Áp dụng thành công mã XEMOI (Giảm ${discount.toLocaleString('vi-VN')} đ)` });
+    } else {
+      // Mã hợp lệ khác: áp dụng demo giảm 15.000 đ
+      const discount = 15000;
+      setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: `Mã ưu đãi ${cleanCode}` });
+      setCouponMessage({ type: 'success', text: `Áp dụng thành công mã ${cleanCode} (-15.000 đ)` });
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setCouponMessage(null);
+  };
 
   const [luggageOption, setLuggageOption] = useState<string>('2 vali to');
   const [customNote, setCustomNote] = useState<string>('');
@@ -385,8 +587,10 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
 
   // 2. Xử lý khi click ghim trên bản đồ (Dùng REF để fix hoàn toàn lỗi stale closure!)
   const handleMapPickedCoordinate = async (lat: number, lng: number) => {
-    // Lấy mode chuẩn xác từ REF
-    const currentMode = mapPickingModeRef.current || (!pickupPointRef.current ? 'PICKUP' : 'DROPOFF');
+    // Khi đang là chuyến cố định, điểm trả đã cố định nên luôn ghim cho PICKUP
+    const currentMode = isFixedTripRef.current
+      ? 'PICKUP'
+      : (mapPickingModeRef.current || (!pickupPointRef.current ? 'PICKUP' : 'DROPOFF'));
     const servicesKey = getVietmapServicesKey();
 
     let resolvedAddress = `Tọa độ (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
@@ -427,7 +631,10 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
       mapPickingModeRef.current = null;
     }
 
-    setRouteResult(null);
+    // Nếu không phải chuyến cố định thì mới xóa kết quả để tính lại
+    if (!isFixedTripRef.current) {
+      setRouteResult(null);
+    }
   };
 
   // 3. Tối ưu Autocomplete: Debounce 600ms + In-Memory Cache + Tối thiểu 3 ký tự
@@ -441,7 +648,11 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
       setDropoffPoint(null);
       dropoffPointRef.current = null;
     }
-    setRouteResult(null);
+
+    // Nếu không phải chuyến cố định thì mới xóa kết quả để tính lại
+    if (!isFixedTripRef.current) {
+      setRouteResult(null);
+    }
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -590,6 +801,8 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
 
     setIsCalculatingRoute(true);
     setRouteError(null);
+    setIsFixedTrip(false);
+    setFixedTripInfo(null);
 
     const servicesKey = getVietmapServicesKey();
 
@@ -744,7 +957,61 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
     setBookingMessage(null);
     setWaitHours(0);
     setIsRoundTrip(false);
+    setIsFixedTrip(false);
+    isFixedTripRef.current = false;
+    setFixedTripInfo(null);
   };
+
+  // Tự động điền dữ liệu khi người dùng chọn chuyến cố định từ Bảng Giá
+  useEffect(() => {
+    if (!fixedTripData) return;
+
+    setIsFixedTrip(true);
+    isFixedTripRef.current = true;
+    setFixedTripInfo({
+      id: fixedTripData.promotionTripId,
+      title: fixedTripData.promotionTripTitle || fixedTripData.title,
+    });
+
+    // Vẫn bắt KH chọn điểm đón -> Không điền sẵn nếu chưa có, giữ nguyên nếu KH đã nhập
+    const dropoffStr = fixedTripData.dropoffAddress || '';
+    setDropoffInput(dropoffStr);
+
+    const dropoffCoords: [number, number] = fixedTripData.dropoffLngLat || [105.8072, 21.2212];
+    const destPt: LocationPoint = {
+      lng: dropoffCoords[0],
+      lat: dropoffCoords[1],
+      address: dropoffStr,
+    };
+    setDropoffPoint(destPt);
+    dropoffPointRef.current = destPt;
+
+    const roundTripVal = Boolean(fixedTripData.isRoundTrip);
+    setIsRoundTrip(roundTripVal);
+    if (!roundTripVal) {
+      setWaitHours(0);
+    }
+
+    const distKm = fixedTripData.distanceKm || '---';
+    const priceVal = fixedTripData.price || 'Thỏa thuận';
+    const travelTimeMinutes = Number(fixedTripData.travelTime);
+
+    // Hiển thị giá luôn và thời gian di chuyển từ API, KHÔNG cần bấm nút tính giá tiền!
+    setRouteResult({
+      distanceKm: distKm,
+      durationMinutes: travelTimeMinutes,
+      estimatedPrice: priceVal,
+      coordinates: [],
+      oneWayKm: distKm,
+      oneWayDuration: travelTimeMinutes,
+      oneWayFare: priceVal,
+      returnFare: 0,
+      waitingFee: 0,
+    });
+    setRouteError(null);
+
+    // Không ghi map / không vẽ route trên bản đồ để tiết kiệm request VIETMAP
+  }, [fixedTripData]);
 
   // 5. NÚT "ĐẶT LỊCH CHUYẾN ĐI": Gửi POST http://localhost:8080/api/v1/bookings
   const handleSubmitBooking = async (e: React.FormEvent) => {
@@ -762,30 +1029,48 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
       return;
     }
 
-    const origin = pickupPointRef.current || pickupPoint;
-    const dest = dropoffPointRef.current || dropoffPoint;
-
-    if (!origin || !dest || !routeResult) {
-      setBookingMessage({ type: 'error', text: 'Vui lòng hoàn tất tính giá tiền trước khi đặt lịch' });
+    // Bắt buộc khách hàng phải chọn hoặc nhập Điểm đón
+    if (!pickupInput.trim()) {
+      setBookingMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn Điểm đón của bạn' });
       return;
     }
+
+    if (!dropoffInput.trim()) {
+      setBookingMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn Điểm trả' });
+      return;
+    }
+
+    if (!routeResult) {
+      setBookingMessage({ type: 'error', text: 'Vui lòng nhấn nút tính giá tiền trước khi đặt lịch' });
+      return;
+    }
+
+    const origin = pickupPointRef.current || pickupPoint;
+    const dest = dropoffPointRef.current || dropoffPoint;
 
     setIsSubmittingBooking(true);
 
     const formattedPickupTime = `${pickupDate}T${pickupTimeStr}:00`;
+    const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
+    const finalEstimatedPrice = Math.max(0, routeResult.estimatedPrice - discountAmount);
 
-    // Đúng 100% mẫu request yêu cầu kèm waitHours, driverId và isRoundTrip:
+    // Đúng 100% mẫu request yêu cầu kèm waitHours, driverId, isRoundTrip, discountCode, isFixedTrip (BỎ tripType):
     const payload = {
       customerName: customerName.trim(),
       customerPhone: cleanPhone,
-      pickupAddress: origin.address || pickupInput,
-      dropoffAddress: dest.address || dropoffInput,
+      pickupAddress: origin?.address || pickupInput.trim(),
+      dropoffAddress: dest?.address || dropoffInput.trim(),
       distanceKm: routeResult.distanceKm,
-      estimatedPrice: routeResult.estimatedPrice,
+      estimatedPrice: finalEstimatedPrice,
       pickupTime: formattedPickupTime,
       waitHours: Number(waitHours) || 0,
       driverId: driverId,
       isRoundTrip: isRoundTrip,
+      isFixedTrip: isFixedTrip,
+      fixedTripTitle: isFixedTrip ? (fixedTripInfo?.title || 'Chuyến cố định') : undefined,
+      promotionTripId: isFixedTrip ? fixedTripInfo?.id : undefined,
+      discountCode: appliedCoupon ? appliedCoupon.code : couponCode.trim() || undefined,
+      discountAmount: discountAmount > 0 ? discountAmount : undefined,
       luggageOption: luggageOption,
       note: customNote,
     };
@@ -939,10 +1224,44 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
             </p>
           </div>
 
+          {/* Thông báo chuyến cố định nếu đang chọn gói cước */}
+          {isFixedTrip && fixedTripInfo && (
+            <div className="p-3 rounded-xl bg-gradient-to-r from-red-950/80 via-slate-900 to-slate-900 border border-red-700/80 shadow-md flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-xs text-slate-300">Gói cố định:</span>
+                <span className="text-xs font-bold text-red-400">{fixedTripInfo.title}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFixedTrip(false);
+                  isFixedTripRef.current = false;
+                  setFixedTripInfo(null);
+                  setDropoffInput('');
+                  setDropoffPoint(null);
+                  dropoffPointRef.current = null;
+                  setRouteResult(null);
+                }}
+                className="text-[11px] text-red-300 hover:text-white font-semibold underline cursor-pointer"
+                title="Bấm để tự do chọn tuyến đường khác và tính lại giá"
+              >
+                Đổi tuyến khác
+              </button>
+            </div>
+          )}
+
           {/* 1. Điểm Đón (Pickup) */}
           <div className="relative">
             <label className="block text-xs font-semibold text-emerald-400 mb-1 flex items-center justify-between">
-              <span>ĐIỂM ĐÓN (PICKUP) <span className="text-red-500">*</span></span>
+              <span className="flex items-center gap-1.5">
+                <span>ĐIỂM ĐÓN (PICKUP) <span className="text-red-500">*</span></span>
+                {isFixedTrip && (
+                  <span className="text-[10px] text-amber-300 font-normal">
+                    (Vui lòng nhập điểm đón thực tế)
+                  </span>
+                )}
+              </span>
               {isSearchingPickup && <span className="text-[10px] text-slate-400 animate-pulse">Đang tìm...</span>}
             </label>
             <div className="relative flex items-center">
@@ -950,7 +1269,7 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
                 type="text"
                 value={pickupInput}
                 onChange={(e) => handleInputChange(e.target.value, 'PICKUP')}
-                placeholder="Nhập địa chỉ đón (VD: Số 1 Tràng Tiền...)"
+                placeholder="Nhập địa chỉ đón của bạn (VD: Số 1 Tràng Tiền...)"
                 className="w-full pl-3.5 pr-26 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-emerald-500 transition-all"
               />
 
@@ -1001,42 +1320,56 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
           {/* 2. Điểm Trả (Dropoff) */}
           <div className="relative">
             <label className="block text-xs font-semibold text-red-400 mb-1 flex items-center justify-between">
-              <span>ĐIỂM TRẢ (DROPOFF) <span className="text-red-500">*</span></span>
+              <span className="flex items-center gap-1.5">
+                <span>ĐIỂM TRẢ (DROPOFF) <span className="text-red-500">*</span></span>
+                {isFixedTrip && (
+                  <span className="text-[10px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded border border-red-800/80 font-bold">
+                    Cố định theo gói
+                  </span>
+                )}
+              </span>
               {isSearchingDropoff && <span className="text-[10px] text-slate-400 animate-pulse">Đang tìm...</span>}
             </label>
             <div className="relative flex items-center">
               <input
                 type="text"
                 value={dropoffInput}
+                disabled={isFixedTrip}
                 onChange={(e) => handleInputChange(e.target.value, 'DROPOFF')}
-                placeholder="Nhập địa chỉ đến (VD: Sân bay Nội Bài...)"
-                className="w-full pl-3.5 pr-26 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-red-500 transition-all"
+                placeholder={isFixedTrip ? 'Điểm trả cố định theo gói cước' : 'Nhập địa chỉ đến (VD: Sân bay Nội Bài...)'}
+                className={`w-full pl-3.5 pr-26 py-2.5 rounded-xl border text-xs sm:text-sm focus:outline-none transition-all ${
+                  isFixedTrip
+                    ? 'bg-slate-900/50 border-red-900/50 text-slate-300 cursor-not-allowed font-medium'
+                    : 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-red-500'
+                }`}
               />
 
-              {/* Nút Ghim trên map (Fix lỗi Stale Closure bằng REF) */}
-              <button
-                type="button"
-                onClick={() => {
-                  const nextMode = mapPickingMode === 'DROPOFF' ? null : 'DROPOFF';
-                  setMapPickingMode(nextMode);
-                  mapPickingModeRef.current = nextMode;
-                }}
-                className={`absolute right-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
-                  mapPickingMode === 'DROPOFF'
-                    ? 'bg-red-600 text-white shadow-md animate-bounce'
-                    : 'bg-slate-800 hover:bg-slate-700 text-red-400 border border-slate-700'
-                }`}
-                title="Bấm để click chọn trên bản đồ"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                </svg>
-                <span>{mapPickingMode === 'DROPOFF' ? 'Đang chọn' : 'Ghim map'}</span>
-              </button>
+              {/* Nút Ghim trên map (Ẩn khi là chuyến cố định vì điểm trả đã điền sẵn) */}
+              {!isFixedTrip && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextMode = mapPickingMode === 'DROPOFF' ? null : 'DROPOFF';
+                    setMapPickingMode(nextMode);
+                    mapPickingModeRef.current = nextMode;
+                  }}
+                  className={`absolute right-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                    mapPickingMode === 'DROPOFF'
+                      ? 'bg-red-600 text-white shadow-md animate-bounce'
+                      : 'bg-slate-800 hover:bg-slate-700 text-red-400 border border-slate-700'
+                  }`}
+                  title="Bấm để click chọn trên bản đồ"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  </svg>
+                  <span>{mapPickingMode === 'DROPOFF' ? 'Đang chọn' : 'Ghim map'}</span>
+                </button>
+              )}
             </div>
 
             {/* Dropdown Gợi ý Autocomplete Điểm Trả */}
-            {dropoffSuggestions.length > 0 && (
+            {!isFixedTrip && dropoffSuggestions.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-40 max-h-48 overflow-y-auto divide-y divide-slate-800">
                 {dropoffSuggestions.map((item, idx) => (
                   <div
@@ -1083,56 +1416,58 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
               </label>
             </div>
 
-            {/* Ô Thời gian chờ (waitHours - cho phép nhập 0.5 với đơn vị giờ) */}
-            <div className="border-t border-slate-800/90 pt-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  <span>Thời gian chờ xe:</span>
-                  <span className="text-[10px] text-emerald-400 font-normal">(Miễn phí 30 phút đầu)</span>
-                </label>
-                <span className="text-xs font-bold text-red-400">
-                  {waitHours > 0 ? `${waitHours} giờ` : 'Đi ngay (0h)'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={waitHours}
-                    onChange={(e) => handleChangeWaitHours(parseFloat(e.target.value) || 0)}
-                    placeholder="0 hoặc 0.5, 1..."
-                    className="w-full pl-3 pr-11 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500 font-medium"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
-                    giờ
+            {/* Ô Thời gian chờ (waitHours - cho phép nhập 0.5 với đơn vị giờ, chỉ hiện khi tích đi 2 chiều) */}
+            {isRoundTrip && (
+              <div className="border-t border-slate-800/90 pt-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <span>Thời gian chờ xe:</span>
+                    <span className="text-[10px] text-emerald-400 font-normal">(Miễn phí 30 phút đầu)</span>
+                  </label>
+                  <span className="text-xs font-bold text-red-400">
+                    {waitHours > 0 ? `${waitHours} giờ` : 'Đi ngay (0h)'}
                   </span>
                 </div>
 
-                {/* Các nút bấm nhanh mốc giờ */}
-                <div className="flex items-center gap-1">
-                  {[0, 0.5, 1, 1.5, 2].map((h) => (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={() => handleChangeWaitHours(h)}
-                      className={`px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                        waitHours === h
-                          ? 'bg-red-600 text-white shadow-sm'
-                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
-                      }`}
-                    >
-                      {h === 0 ? '0h' : `${h}h`}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={waitHours}
+                      onChange={(e) => handleChangeWaitHours(parseFloat(e.target.value) || 0)}
+                      placeholder="0 hoặc 0.5, 1..."
+                      className="w-full pl-3 pr-11 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500 font-medium"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+                      giờ
+                    </span>
+                  </div>
+
+                  {/* Các nút bấm nhanh mốc giờ */}
+                  <div className="flex items-center gap-1">
+                    {[0, 0.5, 1, 1.5, 2].map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() => handleChangeWaitHours(h)}
+                        className={`px-2 py-1.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                          waitHours === h
+                            ? 'bg-red-600 text-white shadow-sm'
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                        }`}
+                      >
+                        {h === 0 ? '0h' : `${h}h`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  30.000 đ/giờ tiếp theo (nhập số lẻ đến 0.5 giờ như 0.5, 1.5, 2.5...)
+                </p>
               </div>
-              <p className="text-[10px] text-slate-500 mt-1">
-                30.000 đ/giờ tiếp theo (nhập số lẻ đến 0.5 giờ như 0.5, 1.5, 2.5...)
-              </p>
-            </div>
+            )}
           </div>
 
           {/* Lỗi nếu có */}
@@ -1167,218 +1502,547 @@ export default function VietmapBookingDemo({ initialDriverId }: { initialDriverI
             /* BƯỚC 2: SAU KHI TÍNH GIÁ TIỀN XONG -> HIỆN KẾT QUẢ & FORM ĐẶT LỊCH CHUYẾN ĐI */
             <form onSubmit={handleSubmitBooking} className="space-y-3.5 pt-1">
               {/* Box hiển thị Quãng đường, Thời gian và Bóc tách giá chi tiết */}
-              <div className="p-4 rounded-xl bg-slate-900 border border-red-900/50 space-y-2.5">
-                <div className="flex items-center justify-between text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <span>Quãng đường tính cước:</span>
-                    {isRoundTrip && (
-                      <span className="text-[10px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded border border-red-800">
-                        2 chiều
-                      </span>
-                    )}
-                  </span>
-                  <span className="font-bold text-white text-sm">
-                    {routeResult.distanceKm} km
-                    {isRoundTrip && (
-                      <span className="text-[11px] text-slate-400 font-normal ml-1">
-                        ({routeResult.oneWayKm} km/chiều)
-                      </span>
-                    )}
-                  </span>
-                </div>
+              {(() => {
+                const discountVal = appliedCoupon ? appliedCoupon.discountAmount : 0;
+                const finalFare = Math.max(0, routeResult.estimatedPrice - discountVal);
+                const conflicted = getConflictedSlot();
+                const selectedDriver = DRIVERS_LIST.find((d) => d.id === driverId) || DRIVERS_LIST[0];
 
-                <div className="flex items-center justify-between text-xs text-slate-300">
-                  <span>Thời gian di chuyển ước tính:</span>
-                  <span className="font-bold text-emerald-400 text-sm">
-                    ~{routeResult.durationMinutes} phút
-                  </span>
-                </div>
+                return (
+                  <>
+                    <div className="p-4 rounded-xl bg-slate-900 border border-red-900/50 space-y-2.5">
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <span>Quãng đường tính cước:</span>
+                          {isRoundTrip && (
+                            <span className="text-[10px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded border border-red-800">
+                              2 chiều
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-bold text-white text-sm">
+                          {routeResult.distanceKm} km
+                          {isRoundTrip && (
+                            <span className="text-[11px] text-slate-400 font-normal ml-1">
+                              ({routeResult.oneWayKm} km/chiều)
+                            </span>
+                          )}
+                        </span>
+                      </div>
 
-                {/* Bóc tách các thành phần giá minh bạch */}
-                <div className="pt-2.5 border-t border-slate-800 space-y-1.5 text-xs text-slate-400">
-                  <div className="flex justify-between">
-                    <span>Cước chiều đi ({routeResult.oneWayKm} km):</span>
-                    <span className="text-slate-200 font-semibold">
-                      {routeResult.oneWayFare.toLocaleString('vi-VN')} đ
-                    </span>
-                  </div>
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span>Thời gian di chuyển ước tính:</span>
+                        <span className="font-bold text-emerald-400 text-sm">
+                          ~{routeResult.durationMinutes} phút
+                        </span>
+                      </div>
 
-                  {isRoundTrip && (
-                    <div className="flex justify-between text-rose-300">
-                      <span>Cước chiều về (65% chiều đi):</span>
-                      <span className="font-semibold">
-                        +{routeResult.returnFare.toLocaleString('vi-VN')} đ
-                      </span>
+                      {/* Bóc tách các thành phần phụ phí & ưu đãi (nếu có) */}
+                      {(isRoundTrip || routeResult.waitingFee > 0 || appliedCoupon) && (
+                        <div className="pt-2.5 border-t border-slate-800 space-y-1.5 text-xs text-slate-400">
+                          {isRoundTrip && (
+                            <div className="flex justify-between text-rose-300">
+                              <span>Cước chiều về (65% chiều đi):</span>
+                              <span className="font-semibold">
+                                +{routeResult.returnFare.toLocaleString('vi-VN')} đ
+                              </span>
+                            </div>
+                          )}
+
+                          {routeResult.waitingFee > 0 && (
+                            <div className="flex justify-between text-amber-300">
+                              <span>Phí thời gian chờ ({waitHours} giờ):</span>
+                              <span className="font-semibold">
+                                +{routeResult.waitingFee.toLocaleString('vi-VN')} đ
+                              </span>
+                            </div>
+                          )}
+
+                          {appliedCoupon && (
+                            <div className="flex justify-between text-emerald-400 font-semibold">
+                              <span>Mã giảm giá ({appliedCoupon.code}):</span>
+                              <span>-{appliedCoupon.discountAmount.toLocaleString('vi-VN')} đ</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs text-slate-400 block">Giá cước tạm tính:</span>
+                          <span className="text-[10px] text-slate-500">
+                            {appliedCoupon ? 'Đã áp dụng mã ưu đãi' : 'Đã bao gồm chiết khấu'}
+                          </span>
+                        </div>
+                        <span className="text-xl font-black text-red-500">
+                          {finalFare.toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+
+                      {!isFixedTrip && (
+                        <button
+                          type="button"
+                          onClick={handleCalculateFare}
+                          disabled={isCalculatingRoute}
+                          className="w-full mt-1 py-1.5 rounded-lg text-[11px] text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          <span>Cập nhật lại lộ trình nếu đổi điểm</span>
+                        </button>
+                      )}
                     </div>
-                  )}
 
-                  {routeResult.waitingFee > 0 && (
-                    <div className="flex justify-between text-amber-300">
-                      <span>Phí thời gian chờ ({waitHours} giờ):</span>
-                      <span className="font-semibold">
-                        +{routeResult.waitingFee.toLocaleString('vi-VN')} đ
-                      </span>
+                    {/* Thông tin khách hàng */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                          Họ và tên <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={customerName}
+                          onChange={(e) => setCustomerName(e.target.value)}
+                          placeholder="Nguyễn Văn A"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                          Số điện thoại <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="tel"
+                          required
+                          value={customerPhone}
+                          onChange={(e) => setCustomerPhone(e.target.value)}
+                          placeholder="0987654321"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
+                        />
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-slate-400 block">Giá cước trọn gói:</span>
-                    <span className="text-[10px] text-slate-500">Đã bao gồm chiết khấu</span>
-                  </div>
-                  <span className="text-xl font-black text-red-500">
-                    {routeResult.estimatedPrice.toLocaleString('vi-VN')} đ
-                  </span>
-                </div>
+                    {/* Chọn Tài xế phục vụ + Nút xem lịch tài xế */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-medium text-slate-300">
+                          Chọn tài xế phục vụ <span className="text-red-500">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowScheduleModal(true)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400 hover:text-red-300 bg-red-950/70 hover:bg-red-900/80 px-2 py-0.5 rounded-lg border border-red-800/80 transition-all cursor-pointer"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span>Xem lịch lái xe (tránh trùng giờ)</span>
+                        </button>
+                      </div>
 
-                <button
-                  type="button"
-                  onClick={handleCalculateFare}
-                  disabled={isCalculatingRoute}
-                  className="w-full mt-1 py-1.5 rounded-lg text-[11px] text-slate-400 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>Cập nhật lại lộ trình nếu đổi điểm</span>
-                </button>
-              </div>
+                      <select
+                        value={driverId}
+                        onChange={(e) => setDriverId(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
+                      >
+                        {DRIVERS_LIST.map((driver) => (
+                          <option key={driver.id} value={driver.id}>
+                            {driver.name} - {driver.carModel} ({driver.rating}★)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              {/* Thông tin khách hàng */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                    Họ và tên <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nguyễn Văn A"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
-                  />
-                </div>
+                    {/* Ngày & Giờ đón (Responsive 1 cột trên điện thoại, 2 cột trên tablet/desktop tránh vỡ layout) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                          Ngày đón <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={pickupDate}
+                          onChange={(e) => setPickupDate(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500 transition-colors"
+                        />
+                      </div>
 
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                    Số điện thoại <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    placeholder="0987654321"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
-                  />
-                </div>
-              </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-medium text-slate-300">
+                            Giờ đón <span className="text-red-500">*</span>
+                          </label>
+                          {conflicted ? (
+                            <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/60">
+                              <span>⚠️</span> Trùng lịch bận
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-400 flex items-center gap-1 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
+                              <span>🟢</span> Khả dụng
+                            </span>
+                          )}
+                        </div>
 
-              {/* Giờ đón (pickupTime) */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">Ngày đón</label>
-                  <input
-                    type="date"
-                    value={pickupDate}
-                    onChange={(e) => setPickupDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
-                  />
-                </div>
+                        <input
+                          type="time"
+                          required
+                          value={pickupTimeStr}
+                          onChange={(e) => setPickupTimeStr(e.target.value)}
+                          className={`w-full px-3 py-2.5 rounded-xl bg-slate-900 border text-slate-100 text-xs font-mono focus:outline-none transition-colors ${
+                            conflicted
+                              ? 'border-amber-500 ring-1 ring-amber-500/50'
+                              : 'border-slate-700 focus:border-red-500'
+                          }`}
+                        />
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-300 mb-1">Giờ đón</label>
-                  <input
-                    type="time"
-                    value={pickupTimeStr}
-                    onChange={(e) => setPickupTimeStr(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
-                  />
-                </div>
-              </div>
+                    {/* Cảnh báo nếu trùng lịch bận của tài xế */}
+                    {conflicted && (
+                      <div className="p-2.5 rounded-xl bg-amber-950/70 border border-amber-800 text-amber-300 text-[11px] flex items-start gap-2">
+                        <span className="text-base leading-none">⚠️</span>
+                        <div className="flex-1">
+                          <p className="font-bold">
+                            Tài xế {scheduleData?.driver?.name || selectedDriver.name} đang bận khung giờ {conflicted.time_display}!
+                          </p>
+                          <p className="text-[10px] text-amber-200 mt-0.5">
+                            Lộ trình: {conflicted.route} {conflicted.travel_time ? `(~${conflicted.travel_time} phút)` : ''}. Vui lòng chọn mốc giờ trống khác hoặc đổi tài xế.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
-              {/* Chọn Tài xế phục vụ (driverId) */}
-              <div>
-                <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                  Chọn tài xế phục vụ <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={driverId}
-                  onChange={(e) => setDriverId(e.target.value)}
-                  className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
-                >
-                  {DRIVERS_LIST.map((driver) => (
-                    <option key={driver.id} value={driver.id}>
-                      {driver.name} - {driver.carModel} ({driver.rating}★)
-                    </option>
-                  ))}
-                </select>
-              </div>
+                    {/* Trường Nhập Mã Giảm Giá */}
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1 flex items-center justify-between">
+                        <span>Mã giảm giá / Voucher</span>
+                        <span className="text-[10px] text-slate-500">Mã gợi ý: TRUNGANH20, VINFAST50, XEMOI</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          placeholder="Nhập mã ưu đãi..."
+                          className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs uppercase font-mono tracking-wider focus:outline-none focus:border-red-500"
+                        />
+                        {appliedCoupon ? (
+                          <button
+                            type="button"
+                            onClick={handleRemoveCoupon}
+                            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
+                          >
+                            Hủy mã
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleApplyCoupon}
+                            className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-md shadow-red-950/50"
+                          >
+                            Áp dụng
+                          </button>
+                        )}
+                      </div>
+                      {couponMessage && (
+                        <p
+                          className={`text-[11px] mt-1 font-medium ${
+                            couponMessage.type === 'success' ? 'text-emerald-400' : 'text-red-400'
+                          }`}
+                        >
+                          {couponMessage.text}
+                        </p>
+                      )}
+                    </div>
 
-              {/* Hành lý */}
-              <div>
-                <label className="block text-[11px] font-medium text-slate-300 mb-1">Số lượng hành lý</label>
-                <select
-                  value={luggageOption}
-                  onChange={(e) => setLuggageOption(e.target.value)}
-                  className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
-                >
-                  <option value="Không có vali">Không có vali</option>
-                  <option value="1 vali vừa">1 vali vừa</option>
-                  <option value="2 vali to">2 vali to</option>
-                  <option value="3-4 vali lớn">3-4 vali lớn (Cốp xe VinFast)</option>
-                </select>
-              </div>
+                    {/* Hành lý */}
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">Số lượng hành lý</label>
+                      <select
+                        value={luggageOption}
+                        onChange={(e) => setLuggageOption(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
+                      >
+                        <option value="Không có vali">Không có vali</option>
+                        <option value="1 vali vừa">1 vali vừa</option>
+                        <option value="2 vali to">2 vali to</option>
+                        <option value="3-4 vali lớn">3-4 vali lớn (Cốp xe VinFast)</option>
+                      </select>
+                    </div>
 
-              {/* Ghi chú riêng */}
-              <div>
-                <label className="block text-[11px] font-medium text-slate-300 mb-1">Ghi chú riêng</label>
-                <input
-                  type="text"
-                  value={customNote}
-                  onChange={(e) => setCustomNote(e.target.value)}
-                  placeholder="VD: Cần xe sạch sẽ, có ghế trẻ em..."
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
-                />
-              </div>
+                    {/* Ghi chú riêng */}
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-300 mb-1">Ghi chú riêng</label>
+                      <input
+                        type="text"
+                        value={customNote}
+                        onChange={(e) => setCustomNote(e.target.value)}
+                        placeholder="VD: Cần xe sạch sẽ, có ghế trẻ em..."
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"
+                      />
+                    </div>
 
-              {/* Thông báo gửi booking */}
-              {bookingMessage && (
-                <div
-                  className={`p-2.5 rounded-xl text-xs ${
-                    bookingMessage.type === 'success'
-                      ? 'bg-emerald-950/70 border border-emerald-800 text-emerald-300'
-                      : 'bg-red-950/70 border border-red-800 text-red-300'
-                  }`}
-                >
-                  {bookingMessage.text}
-                </div>
-              )}
+                    {/* Thông báo gửi booking */}
+                    {bookingMessage && (
+                      <div
+                        className={`p-2.5 rounded-xl text-xs ${
+                          bookingMessage.type === 'success'
+                            ? 'bg-emerald-950/70 border border-emerald-800 text-emerald-300'
+                            : 'bg-red-950/70 border border-red-800 text-red-300'
+                        }`}
+                      >
+                        {bookingMessage.text}
+                      </div>
+                    )}
 
-              {/* NÚT "ĐẶT LỊCH CHO CHUYẾN ĐI" */}
-              <div className="pt-1">
-                <button
-                  type="submit"
-                  disabled={isSubmittingBooking}
-                  className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-95 transition-all shadow-xl shadow-red-900/40 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-                >
-                  {isSubmittingBooking ? (
-                    <span>Đang gửi thông tin...</span>
-                  ) : (
-                    <span>Đặt lịch cho chuyến đi ({routeResult.estimatedPrice.toLocaleString('vi-VN')} đ)</span>
-                  )}
-                </button>
-              </div>
+                    {/* NÚT "ĐẶT LỊCH CHO CHUYẾN ĐI" */}
+                    <div className="pt-1">
+                      <button
+                        type="submit"
+                        disabled={isSubmittingBooking}
+                        className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-95 transition-all shadow-xl shadow-red-900/40 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                      >
+                        {isSubmittingBooking ? (
+                          <span>Đang gửi thông tin...</span>
+                        ) : (
+                          <span>Đặt lịch cho chuyến đi ({finalFare.toLocaleString('vi-VN')} đ)</span>
+                        )}
+                      </button>
+                    </div>
 
-              <p className="text-[10px] text-slate-500 text-center">
-                Endpoint: <code>POST http://localhost:8080/api/v1/bookings</code> (có kèm <code>waitHours</code>, <code>driverId</code> & <code>isRoundTrip</code>)
-              </p>
+                    <p className="text-[10px] text-slate-500 text-center">
+                      Endpoint: <code>POST http://localhost:8080/api/v1/bookings</code> (có kèm <code>waitHours</code>, <code>driverId</code> &amp; <code>discountCode</code>)
+                    </p>
+                  </>
+                );
+              })()}
             </form>
           )}
         </div>
       </div>
+
+      {/* MODAL XEM LỊCH HOẠT ĐỘNG CỦA LÁI XE (RỘNG RÃI, ĐẸP MẮT & CHUẨN RESPONSIVE MOBILE) */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl sm:rounded-3xl max-w-2xl w-full p-4 sm:p-6 md:p-7 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+            {/* Viền Crimson trang trí đỉnh modal */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-600 via-rose-500 to-red-700 rounded-t-2xl sm:rounded-t-3xl pointer-events-none" />
+
+            {/* Nút đóng modal */}
+            <button
+              type="button"
+              onClick={() => setShowScheduleModal(false)}
+              className="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-all border border-slate-700/70"
+              title="Đóng cửa sổ"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Header Modal & Thông tin Tài xế từ API */}
+            {(() => {
+              const currentDriverStatic = DRIVERS_LIST.find((d) => d.id === driverId) || DRIVERS_LIST[0];
+              const driverInfo = scheduleData?.driver || {
+                id: driverId,
+                name: currentDriverStatic.name,
+                vehicle: currentDriverStatic.carModel,
+                license_plate: currentDriverStatic.plateNumber,
+                rating: currentDriverStatic.rating,
+              };
+
+              const busyTrips = scheduleData?.busy_trips || [];
+              const availableSlots = scheduleData?.available_slots || [];
+              const displayDate = scheduleData?.selected_date || pickupDate;
+
+              return (
+                <div className="space-y-4">
+                  {/* Card thông tin tài xế */}
+                  <div className="flex items-center gap-3 sm:gap-4 border-b border-slate-800 pb-4 pr-10">
+                    <img
+                      src={currentDriverStatic.avatar}
+                      alt={driverInfo.name}
+                      className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-red-500 shadow-lg shadow-red-950/40 flex-shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base sm:text-xl font-extrabold text-white truncate">
+                          {driverInfo.name}
+                        </h3>
+                        <span className="text-xs sm:text-sm text-amber-400 font-bold bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-800/50 flex items-center gap-1">
+                          ★ {driverInfo.rating || 5.0}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                        <span className="text-slate-300 font-medium">{driverInfo.vehicle || 'VinFast Limo Green'}</span>
+                        <span className="text-slate-600">•</span>
+                        <span className="font-mono text-red-400 font-bold bg-red-950/80 px-2 py-0.5 rounded border border-red-900/60 text-xs">
+                          {driverInfo.license_plate || '35H - 18229'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Thanh chọn ngày & Làm mới lịch */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                        Lịch trình ngày:
+                      </span>
+                      <span className="text-sm sm:text-base text-red-400 font-mono font-bold bg-red-950/80 px-2.5 py-0.5 rounded-lg border border-red-900/70">
+                        {displayDate}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => fetchDriverSchedule(driverId, pickupDate)}
+                      disabled={isLoadingSchedule}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+                      title="Cập nhật lại lịch từ hệ thống"
+                    >
+                      <svg
+                        className={`w-3.5 h-3.5 ${isLoadingSchedule ? 'animate-spin text-red-400' : 'text-slate-400'}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                        />
+                      </svg>
+                      <span>{isLoadingSchedule ? 'Đang tải...' : 'Làm mới'}</span>
+                    </button>
+                  </div>
+
+                  {/* 1. DANH SÁCH CÁC CHUYẾN ĐÃ BẬN (busy_trips) */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" />
+                        Khung giờ tài xế ĐÃ CÓ CHUYẾN (Bận):
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {busyTrips.length} chuyến đã đặt
+                      </span>
+                    </div>
+
+                    {busyTrips.length > 0 ? (
+                      <div className="space-y-2">
+                        {busyTrips.map((trip, idx) => (
+                          <div
+                            key={trip.trip_id || idx}
+                            className="p-3 sm:p-3.5 rounded-xl bg-gradient-to-r from-red-950/40 to-slate-950/70 border border-red-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-rose-300 bg-red-950/90 px-2.5 py-1 rounded-lg border border-red-800 font-bold text-xs sm:text-sm">
+                                  {trip.time_display}
+                                </span>
+                                {trip.trip_id && (
+                                  <span className="text-[10px] text-slate-400 font-medium">#{trip.trip_id}</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-200 flex items-center gap-1 mt-1">
+                                <span className="text-slate-400">Lộ trình:</span>
+                                <strong className="text-white font-semibold">{trip.route}</strong>
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-start sm:self-center">
+                              {(trip.tralvel_time || trip.travel_time) && (
+                                <span className="text-[11px] text-slate-400 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
+                                  ~{trip.tralvel_time || trip.travel_time} phút
+                                </span>
+                              )}
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-red-900/70 text-red-300 border border-red-800 whitespace-nowrap">
+                                Đã bận
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-center text-xs text-slate-400">
+                        Tài xế hiện chưa có chuyến nào trong ngày này. Bạn có thể chọn bất kỳ giờ nào!
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2. DANH SÁCH CÁC MỐC GIỜ KHẢ DỤNG (available_slots) */}
+                  <div className="space-y-2.5 pt-4 border-t border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Mốc giờ KHẢ DỤNG (Chạm để chọn giờ đón):
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        {availableSlots.length} mốc giờ trống
+                      </span>
+                    </div>
+
+                    {availableSlots.length > 0 ? (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 sm:gap-2.5 max-h-56 overflow-y-auto p-1">
+                        {availableSlots.map((slot, sIdx) => {
+                          const isSelected = pickupTimeStr === slot;
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => {
+                                setPickupTimeStr(slot);
+                                setShowScheduleModal(false);
+                              }}
+                              className={`p-2.5 sm:p-3 rounded-xl text-center border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg shadow-emerald-950/60 scale-102 ring-2 ring-emerald-500/50'
+                                  : 'bg-slate-800/90 hover:bg-emerald-950/70 text-slate-200 hover:text-emerald-300 border-slate-700 hover:border-emerald-700'
+                              }`}
+                            >
+                              <span className="block font-mono font-bold text-sm sm:text-base leading-tight">
+                                {slot}
+                              </span>
+                              <span className="text-[10px] opacity-80 block mt-0.5">
+                                {isSelected ? '✓ Đang chọn' : 'Trống'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-2 text-center">
+                        Tất cả các mốc giờ trong ngày đã được đặt kín.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Footer Modal */}
+                  <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
+                    <span className="text-xs text-slate-300">
+                      Giờ đón hiện tại: <strong className="text-emerald-400 font-mono text-sm ml-1">{pickupTimeStr}</strong>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowScheduleModal(false)}
+                      className="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 hover:bg-slate-700 text-white cursor-pointer transition-all border border-slate-700 shadow-md"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
