@@ -4,20 +4,16 @@ import HomePage from './pages/HomePage';
 import TripTrackingPage from './pages/TripTrackingPage';
 import DemoMapPage from './pages/DemoMapPage';
 import DriverSchedulePage from './pages/DriverSchedulePage';
-
 function App() {
-  return (
-    <BrowserRouter>
+    return (<BrowserRouter>
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/trip/:code" element={<TripTrackingPage />} />
-        <Route path="/demo-map" element={<DemoMapPage />} />
-        <Route path="/driver/schedule" element={<DriverSchedulePage />} />
-        <Route path="/driver" element={<Navigate to="/driver/schedule" replace />} />
-        <Route path="/driver/login" element={<Navigate to="/driver/schedule" replace />} />
+        <Route path="/" element={<HomePage />}/>
+        <Route path="/trip/:code" element={<TripTrackingPage />}/>
+        <Route path="/demo-map" element={<DemoMapPage />}/>
+        <Route path="/driver/schedule" element={<DriverSchedulePage />}/>
+        <Route path="/driver" element={<Navigate to="/driver/schedule" replace/>}/>
+        <Route path="/driver/login" element={<Navigate to="/driver/schedule" replace/>}/>
       </Routes>
-    </BrowserRouter>
-  );
+    </BrowserRouter>);
 }
-
 export default App;
