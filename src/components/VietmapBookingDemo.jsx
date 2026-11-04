@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import '@vietmap/vietmap-gl-js/dist/vietmap-gl.css';
 import { DRIVERS_LIST } from './PricingAndDrivers';
+import { driverService } from '../services/driverService';
+import { discountService } from '../services/discount.service';
+import { webPushService } from '../services/webPush.service';
 import { ENV } from '../config/env.config';
 /**
  * Công thức tính cước vận chuyển chuẩn theo yêu cầu:
@@ -266,19 +269,59 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
             });
         }
     };
+    // Danh sách tài xế (lấy từ API http://localhost:8080/api/v1/drivers?isActive=true)
+    const [driversList, setDriversList] = useState(DRIVERS_LIST);
+    const [isLoadingDrivers, setIsLoadingDrivers] = useState(false);
+
     // Chọn tài xế (driverId)
     const [driverId, setDriverId] = useState('1');
+
+    useEffect(() => {
+        let isMounted = true;
+        async function loadDrivers() {
+            setIsLoadingDrivers(true);
+            try {
+                const list = await driverService.getDrivers(true);
+                if (isMounted && Array.isArray(list) && list.length > 0) {
+                    setDriversList(list);
+                    setDriverId((prevId) => {
+                        const exists = list.some((d) => String(d.id) === String(prevId));
+                        return exists ? prevId : String(list[0].id);
+                    });
+                }
+            } catch (err) {
+                console.warn('Lỗi tải danh sách tài xế từ API, dùng danh sách mặc định:', err);
+            } finally {
+                if (isMounted) setIsLoadingDrivers(false);
+            }
+        }
+        loadDrivers();
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
     useEffect(() => {
         if (initialDriverId) {
-            setDriverId(initialDriverId);
+            setDriverId(String(initialDriverId));
         }
     }, [initialDriverId]);
+
+    // Tài xế đang được chọn (dùng cho cả ngoài form lẫn sau khi tính giá)
+    const selectedDriver = driversList.find((d) => String(d.id) === String(driverId)) || driversList[0] || DRIVERS_LIST[0];
     // Modal xem lịch của lái xe để tránh trùng giờ
     const [showScheduleModal, setShowScheduleModal] = useState(false);
+    // Modal Soft Prompt xin quyền Web Push Notification
+    const [showPushModal, setShowPushModal] = useState(false);
 
-    // Khóa cuộn trang nền khi mở popup lịch trình
+    // Tự động đăng ký Service Worker Web Push trong nền
     useEffect(() => {
-        if (showScheduleModal) {
+        webPushService.registerServiceWorker();
+    }, []);
+
+    // Khóa cuộn trang nền khi mở popup lịch trình hoặc popup xin quyền notification
+    useEffect(() => {
+        if (showScheduleModal || showPushModal) {
             document.body.style.overflow = 'hidden';
         } else {
             document.body.style.overflow = '';
@@ -286,7 +329,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
         return () => {
             document.body.style.overflow = '';
         };
-    }, [showScheduleModal]);
+    }, [showScheduleModal, showPushModal]);
     const [scheduleData, setScheduleData] = useState(null);
     const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
     const [scheduleError, setScheduleError] = useState(null);
@@ -332,7 +375,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
         catch (err) {
             console.warn('Lỗi kết nối API lịch trình tài xế, sử dụng lịch khả dụng mặc định:', err);
             // Fallback: khi chưa có lịch hoặc lỗi kết nối, tất cả các mốc giờ đều khả dụng
-            const fallbackDriver = DRIVERS_LIST.find((d) => d.id === dId) || DRIVERS_LIST[0];
+            const fallbackDriver = driversList.find((d) => String(d.id) === String(dId)) || driversList[0] || DRIVERS_LIST[0];
             setScheduleData({
                 driver: {
                     id: dId,
@@ -406,7 +449,10 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
     const [couponCode, setCouponCode] = useState('');
     const [appliedCoupon, setAppliedCoupon] = useState(null);
     const [couponMessage, setCouponMessage] = useState(null);
-    const handleApplyCoupon = () => {
+    const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+
+    // Call API kiểm tra mã giảm giá: POST http://localhost:8080/api/v1/discounts/validate
+    const handleApplyCoupon = async () => {
         setCouponMessage(null);
         const cleanCode = couponCode.trim().toUpperCase();
         if (!cleanCode) {
@@ -414,28 +460,51 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
             return;
         }
         const currentBasePrice = routeResult?.estimatedPrice || 0;
-        if (cleanCode === 'TRUNGANH20') {
-            const discount = 20000;
-            setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: 'Giảm ngay 20.000 VNĐ' });
-            setCouponMessage({ type: 'success', text: 'Áp dụng thành công mã TRUNGANH20 (Giảm 20.000 đ)' });
+        if (currentBasePrice <= 0) {
+            setCouponMessage({ type: 'error', text: 'Vui lòng tính giá cước chuyến đi trước khi áp dụng mã' });
+            return;
         }
-        else if (cleanCode === 'VINFAST50') {
-            const discount = 50000;
-            setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: 'Ưu đãi xe VinFast 50.000 VNĐ' });
-            setCouponMessage({ type: 'success', text: 'Áp dụng thành công mã VINFAST50 (Giảm 50.000 đ)' });
-        }
-        else if (cleanCode === 'XEMOI') {
-            const discount = Math.min(50000, Math.round((currentBasePrice * 0.1) / 1000) * 1000);
-            setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: 'Giảm 10% khách hàng mới' });
-            setCouponMessage({ type: 'success', text: `Áp dụng thành công mã XEMOI (Giảm ${discount.toLocaleString('vi-VN')} đ)` });
-        }
-        else {
-            // Mã hợp lệ khác: áp dụng demo giảm 15.000 đ
-            const discount = 15000;
-            setAppliedCoupon({ code: cleanCode, discountAmount: discount, label: `Mã ưu đãi ${cleanCode}` });
-            setCouponMessage({ type: 'success', text: `Áp dụng thành công mã ${cleanCode} (-15.000 đ)` });
+
+        setIsValidatingCoupon(true);
+        try {
+            const res = await discountService.validateDiscount(cleanCode, currentBasePrice);
+            // Response dạng { status: 200, success: true, message: '...', data: { valid: true, message: '...', originalPrice: 250000, discountAmount: 50000, finalPrice: 200000 } }
+            const payload = res?.data || res;
+            const isValid = payload?.valid === true || res?.success === true;
+
+            if (isValid) {
+                const discountAmount = Number(payload?.discountAmount) || 0;
+                const finalPrice = payload?.finalPrice !== undefined
+                    ? Number(payload.finalPrice)
+                    : Math.max(0, currentBasePrice - discountAmount);
+                const successMsg = payload?.message || res?.message || 'Áp dụng mã giảm giá thành công!';
+
+                setAppliedCoupon({
+                    code: cleanCode,
+                    discountAmount,
+                    finalPrice,
+                    originalPrice: payload?.originalPrice || currentBasePrice,
+                    label: `Giảm ${discountAmount.toLocaleString('vi-VN')} đ`,
+                });
+                setCouponMessage({
+                    type: 'success',
+                    text: `${successMsg} (-${discountAmount.toLocaleString('vi-VN')} đ)`,
+                });
+            } else {
+                const failMsg = payload?.message || res?.message || 'Mã giảm giá không hợp lệ hoặc đã hết hạn';
+                setAppliedCoupon(null);
+                setCouponMessage({ type: 'error', text: failMsg });
+            }
+        } catch (err) {
+            console.warn('Lỗi gọi API kiểm tra mã giảm giá:', err);
+            const errorMsg = err?.data?.message || err?.message || 'Mã giảm giá không tồn tại hoặc đã hết hạn';
+            setAppliedCoupon(null);
+            setCouponMessage({ type: 'error', text: errorMsg });
+        } finally {
+            setIsValidatingCoupon(false);
         }
     };
+
     const handleRemoveCoupon = () => {
         setAppliedCoupon(null);
         setCouponCode('');
@@ -944,7 +1013,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
         const travelTimeMinutes = Number(fixedTripData.travelTime);
         // Hiển thị giá luôn và thời gian di chuyển từ API, KHÔNG cần bấm nút tính giá tiền!
         setRouteResult({
-            distanceKm: distKm,
+            distanceKm: distKm === '---' ? 0 : distKm,
             durationMinutes: travelTimeMinutes,
             estimatedPrice: priceVal,
             coordinates: [],
@@ -957,59 +1026,71 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
         setRouteError(null);
         // Không ghi map / không vẽ route trên bản đồ để tiết kiệm request VIETMAP
     }, [fixedTripData]);
-    // 5. NÚT "ĐẶT LỊCH CHUYẾN ĐI": Gửi POST http://localhost:8080/api/v1/bookings
-    const handleSubmitBooking = async (e) => {
-        e.preventDefault();
-        setBookingMessage(null);
-        if (!customerName.trim()) {
-            setBookingMessage({ type: 'error', text: 'Vui lòng nhập họ và tên của bạn' });
-            return;
-        }
-        const cleanPhone = customerPhone.replace(/\s+/g, '');
-        if (!/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(cleanPhone)) {
-            setBookingMessage({ type: 'error', text: 'Số điện thoại không hợp lệ (Ví dụ: 0987654321)' });
-            return;
-        }
-        // Bắt buộc khách hàng phải chọn hoặc nhập Điểm đón
-        if (!pickupInput.trim()) {
-            setBookingMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn Điểm đón của bạn' });
-            return;
-        }
-        if (!dropoffInput.trim()) {
-            setBookingMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn Điểm trả' });
-            return;
-        }
-        if (!routeResult) {
-            setBookingMessage({ type: 'error', text: 'Vui lòng nhấn nút tính giá tiền trước khi đặt lịch' });
-            return;
-        }
+    // 5. THỰC THI GỬI ĐẶT LỊCH ĐẾN BACKEND
+    const executeSubmitBooking = async (pushJson = null) => {
+        setIsSubmittingBooking(true);
+        // Chuẩn hóa định dạng pickupTime theo đúng yyyy-MM-dd'T'HH:mm:ss
+        const timeParts = (pickupTimeStr || '08:00').split(':');
+        const hh = (timeParts[0] || '08').padStart(2, '0');
+        const mm = (timeParts[1] || '00').padStart(2, '0');
+        const ss = (timeParts[2] || '00').padStart(2, '0');
+        const formattedPickupTime = `${pickupDate}T${hh}:${mm}:${ss}`;
+
+        const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
+        const finalEstimatedPrice = Math.max(0, (routeResult?.estimatedPrice || 0) - discountAmount);
+
         const origin = pickupPointRef.current || pickupPoint;
         const dest = dropoffPointRef.current || dropoffPoint;
-        setIsSubmittingBooking(true);
-        const formattedPickupTime = `${pickupDate}T${pickupTimeStr}:00`;
-        const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
-        const finalEstimatedPrice = Math.max(0, routeResult.estimatedPrice - discountAmount);
-        // Đúng 100% mẫu request yêu cầu kèm waitHours, driverId, isRoundTrip, discountCode, isFixedTrip (BỎ tripType):
+        const cleanPhone = customerPhone.replace(/\s+/g, '');
+
+        let pickupCoordsStr = null;
+        if (origin?.lat && origin?.lng) {
+            pickupCoordsStr = `${origin.lat},${origin.lng}`;
+        } else if (fixedTripData?.pickupLngLat && fixedTripData.pickupLngLat.length >= 2) {
+            pickupCoordsStr = `${fixedTripData.pickupLngLat[1]},${fixedTripData.pickupLngLat[0]}`;
+        } else {
+            pickupCoordsStr = "20.9800,105.7800";
+        }
+
+        let dropoffCoordsStr = null;
+        if (dest?.lat && dest?.lng) {
+            dropoffCoordsStr = `${dest.lat},${dest.lng}`;
+        } else if (fixedTripData?.dropoffLngLat && fixedTripData.dropoffLngLat.length >= 2) {
+            dropoffCoordsStr = `${fixedTripData.dropoffLngLat[1]},${fixedTripData.dropoffLngLat[0]}`;
+        } else {
+            dropoffCoordsStr = "21.2212,105.8072";
+        }
+
+        const promoId = (isFixedTrip && (fixedTripInfo?.id || fixedTripInfo?.promotionTripId))
+            ? Number(fixedTripInfo.id || fixedTripInfo.promotionTripId)
+            : null;
+
+        const calculatedTravelTime = Number(routeResult?.durationMinutes) || Number(fixedTripInfo?.travelTime) || 45;
+
+        // CHỈ CÒN ĐÚNG 19 TRƯỜNG THEO REQUEST BACKEND
         const payload = {
             customerName: customerName.trim(),
             customerPhone: cleanPhone,
             pickupAddress: origin?.address || pickupInput.trim(),
+            pickupCoordinates: pickupCoordsStr,
             dropoffAddress: dest?.address || dropoffInput.trim(),
-            distanceKm: routeResult.distanceKm,
-            estimatedPrice: finalEstimatedPrice,
+            dropoffCoordinates: dropoffCoordsStr,
+            distanceKm: Number(routeResult?.distanceKm) || 0,
+            estimatedPrice: Number(finalEstimatedPrice) || 0,
             pickupTime: formattedPickupTime,
-            waitHours: Number(waitHours) || 0,
-            driverId: driverId,
-            isRoundTrip: isRoundTrip,
-            isFixedTrip: isFixedTrip,
-            fixedTripTitle: isFixedTrip ? (fixedTripInfo?.title || 'Chuyến cố định') : undefined,
-            promotionTripId: isFixedTrip ? fixedTripInfo?.id : undefined,
-            discountCode: appliedCoupon ? appliedCoupon.code : couponCode.trim() || undefined,
-            discountAmount: discountAmount > 0 ? discountAmount : undefined,
-            luggageOption: luggageOption,
-            note: customNote,
+            driverId: driverId ? Number(driverId) : null,
+            waitHours: Number(waitHours) || 0.0,
+            isRoundTrip: Boolean(isRoundTrip),
+            isFixedTrip: Boolean(isFixedTrip),
+            promotionTripId: promoId,
+            discountCode: appliedCoupon ? appliedCoupon.code : (couponCode.trim() ? couponCode.trim().toUpperCase() : null),
+            luggageOption: luggageOption || '2 vali to',
+            travelTime: calculatedTravelTime,
+            bufferMinutes: 15,
+            note: customNote.trim() || '',
+            pushNotification: pushJson || null,
         };
-        console.log(`Sending payload to ${ENV.API_BASE_URL}/bookings:`, payload);
+        console.log(`Sending payload to ${ENV.API_BASE_URL}/bookings:`, JSON.stringify(payload, null, 2));
         try {
             const response = await fetch(`${ENV.API_BASE_URL}/bookings`, {
                 method: 'POST',
@@ -1034,6 +1115,19 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                     text: `Đặt chuyến thành công! Mã chuyến: ${tripCode}. Đang chuyển trang tracking...`,
                 });
                 sessionStorage.setItem(`trip_${tripCode}`, JSON.stringify(payload));
+
+                // Bắn notification ngay nếu khách đã cấp quyền
+                if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+                    try {
+                        new Notification('Trung Anh Car - Đặt chuyến thành công!', {
+                            body: `Mã chuyến: ${tripCode}. Tài xế ${selectedDriver?.name || 'Trung Anh'} sẽ đón bạn đúng giờ!`,
+                            icon: selectedDriver?.avatar || '/favicon.svg',
+                        });
+                    } catch (notifErr) {
+                        console.warn('Notification error:', notifErr);
+                    }
+                }
+
                 setTimeout(() => {
                     navigate(`/trip/${tripCode}`);
                 }, 1500);
@@ -1058,6 +1152,100 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
             setIsSubmittingBooking(false);
         }
     };
+
+    // 6. NÚT "ĐẶT LỊCH CHUYẾN ĐI": Validate form & Kích hoạt luồng Soft Prompt Web Push
+    const handleSubmitBooking = async (e) => {
+        e.preventDefault();
+        setBookingMessage(null);
+        if (!customerName.trim()) {
+            setBookingMessage({ type: 'error', text: 'Vui lòng nhập họ và tên của bạn' });
+            const el = document.getElementById('bookingCustomerName');
+            if (el) el.focus();
+            return;
+        }
+        const cleanPhone = customerPhone.replace(/\s+/g, '');
+        if (!cleanPhone) {
+            setBookingMessage({ type: 'error', text: 'Vui lòng nhập số điện thoại liên hệ' });
+            const el = document.getElementById('bookingCustomerPhone');
+            if (el) el.focus();
+            return;
+        }
+        if (!/^(0|\+84)(3|5|7|8|9)[0-9]{8}$/.test(cleanPhone)) {
+            setBookingMessage({ type: 'error', text: 'Số điện thoại không hợp lệ (Ví dụ: 0987654321)' });
+            const el = document.getElementById('bookingCustomerPhone');
+            if (el) el.focus();
+            return;
+        }
+        if (!pickupDate) {
+            setBookingMessage({ type: 'error', text: 'Vui lòng chọn ngày đón' });
+            return;
+        }
+        if (!pickupTimeStr) {
+            setBookingMessage({ type: 'error', text: 'Vui lòng chọn giờ đón' });
+            return;
+        }
+        // Bắt buộc khách hàng phải chọn hoặc nhập Điểm đón
+        if (!pickupInput.trim()) {
+            setBookingMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn Điểm đón của bạn' });
+            return;
+        }
+        if (!dropoffInput.trim()) {
+            setBookingMessage({ type: 'error', text: 'Vui lòng nhập hoặc chọn Điểm trả' });
+            return;
+        }
+        if (!routeResult) {
+            setBookingMessage({ type: 'error', text: 'Vui lòng nhấn nút tính giá tiền trước khi đặt lịch' });
+            return;
+        }
+
+        // LUỒNG PRE-PERMISSION SOFT PROMPT: Nếu trình duyệt chưa cấp quyền (permission === 'default'), hiện modal giải thích trước
+        const isPushSupported = typeof window !== 'undefined' && 'Notification' in window;
+        const shouldAskPush = isPushSupported && Notification.permission === 'default';
+
+        if (shouldAskPush) {
+            setShowPushModal(true);
+            return;
+        }
+
+        // Nếu đã từng cấp quyền từ trước -> lấy chuỗi JSON Web Push gửi cho BE
+        let pushJson = null;
+        if (isPushSupported && Notification.permission === 'granted') {
+            try {
+                pushJson = await webPushService.getSubscriptionJson();
+            } catch (pushErr) {
+                console.warn('Lỗi lấy push subscription:', pushErr);
+            }
+        }
+
+        // Tiến hành gửi đặt xe
+        await executeSubmitBooking(pushJson);
+    };
+
+    // Khi khách bấm: "Tôi hiểu rồi, tiếp tục" -> Trình duyệt bật popup thật xin quyền & lấy chuỗi JSON Web Push
+    const handleConfirmPush = async () => {
+        setShowPushModal(false);
+        let pushJson = null;
+        try {
+            if (typeof window !== 'undefined' && 'Notification' in window) {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    localStorage.setItem('tac_push_enabled', 'true');
+                    // Lấy chuỗi JSON subscription của Web Push gửi cho BE
+                    pushJson = await webPushService.getSubscriptionJson();
+                }
+            }
+        } catch (err) {
+            console.warn('Lỗi requestPermission Notification:', err);
+        }
+        // Gửi đơn đặt xe kèm chuỗi JSON web push (hoặc null nếu khách từ chối trên popup browser)
+        await executeSubmitBooking(pushJson);
+    };
+
+    // Khi khách bấm: "Bỏ qua" -> Vẫn đặt xe bình thường, pushNotification = null
+    const handleSkipPush = async () => {
+        setShowPushModal(false);
+        await executeSubmitBooking(null);
+    };
     return (<div className="w-full bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl relative overflow-hidden">
       {/* Viền Crimson trang trí */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-600 via-rose-500 to-red-700"/>
@@ -1067,12 +1255,11 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-red-600 text-white shadow-md">
-              Hệ Thống Đặt Xe Trực Quan
+              Đặt xe đến đón ngay
             </span>
-            <span className="text-xs text-slate-400">VIETMAP Maps & Routing API v4</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-white mt-1">
-            Đặt Xe Điện Riêng VinFast - Báo Giá Trọn Gói
+            Đặt Xe Điện VinFast - Báo giá công khai - Đón trả tận nơi
           </h2>
           <p className="text-xs text-slate-400">
             Chọn lộ trình trên bản đồ, tính khoảng cách chính xác và đặt lịch đón tận nơi.
@@ -1112,7 +1299,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
             {isCalculatingRoute && (<div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex flex-col items-center justify-center gap-2 z-20">
                 <div className="w-8 h-8 border-3 border-red-500 border-t-transparent rounded-full animate-spin"/>
                 <span className="text-xs font-bold text-white drop-shadow">
-                  VIETMAP Routing API đang tính đường xe ô tô...
+                  Đang tính đường xe ô tô...
                 </span>
               </div>)}
 
@@ -1167,7 +1354,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
               {isSearchingPickup && <span className="text-[10px] text-slate-400 animate-pulse">Đang tìm...</span>}
             </label>
             <div className="relative flex items-center">
-              <input type="text" value={pickupInput} onChange={(e) => handleInputChange(e.target.value, 'PICKUP')} placeholder="Nhập địa chỉ đón của bạn (VD: Số 1 Tràng Tiền...)" className="w-full pl-3.5 pr-26 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-emerald-500 transition-all"/>
+              <input type="text" value={pickupInput} onChange={(e) => handleInputChange(e.target.value, 'PICKUP')} placeholder="Nhập địa chỉ đón của bạn" className="w-full pl-3.5 pr-[115px] py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-emerald-500 transition-all"/>
 
               {/* Nút Ghim trên map (Fix lỗi Stale Closure bằng REF) */}
               <button type="button" onClick={() => {
@@ -1207,9 +1394,9 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
               {isSearchingDropoff && <span className="text-[10px] text-slate-400 animate-pulse">Đang tìm...</span>}
             </label>
             <div className="relative flex items-center">
-              <input type="text" value={dropoffInput} disabled={isFixedTrip} onChange={(e) => handleInputChange(e.target.value, 'DROPOFF')} placeholder={isFixedTrip ? 'Điểm trả cố định theo gói cước' : 'Nhập địa chỉ đến (VD: Sân bay Nội Bài...)'} className={`w-full pl-3.5 pr-26 py-2.5 rounded-xl border text-xs sm:text-sm focus:outline-none transition-all ${isFixedTrip
-            ? 'bg-slate-900/50 border-red-900/50 text-slate-300 cursor-not-allowed font-medium'
-            : 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-red-500'}`}/>
+              <input type="text" value={dropoffInput} disabled={isFixedTrip} onChange={(e) => handleInputChange(e.target.value, 'DROPOFF')} placeholder={isFixedTrip ? 'Điểm trả cố định theo gói cước' : 'Nhập địa chỉ đến (VD: Sân bay Nội Bài...)'} className={`w-full pl-3.5 py-2.5 rounded-xl border text-xs sm:text-sm focus:outline-none transition-all ${isFixedTrip
+            ? 'bg-slate-900/50 border-red-900/50 text-slate-300 cursor-not-allowed font-medium pr-3.5'
+            : 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-red-500 pr-[115px]'}`}/>
 
               {/* Nút Ghim trên map (Ẩn khi là chuyến cố định vì điểm trả đã điền sẵn) */}
               {!isFixedTrip && (<button type="button" onClick={() => {
@@ -1237,7 +1424,94 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
               </div>)}
           </div>
 
-          {/* 3. TÙY CHỌN CHUYẾN ĐI (Nhập trước khi tính giá để tính chính xác giá) */}
+          
+          {/* 3. CHỌN TÀI XẾ PHỤC VỤ (Được chuyển ra ngoài cùng Điểm đón & Điểm trả để xem được ngay tài xế) */}
+          <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                </svg>
+                <span>TÀI XẾ PHỤC VỤ <span className="text-red-500">*</span></span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setShowScheduleModal(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400 hover:text-red-300 bg-red-950/70 hover:bg-red-900/80 px-2.5 py-1 rounded-lg border border-red-800/80 transition-all cursor-pointer shadow-sm"
+                title="Bấm để xem chi tiết các khung giờ bận/trống của tài xế"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <span>Xem lịch lái xe</span>
+              </button>
+            </div>
+
+            {/* Combobox chọn tài xế */}
+            <div className="relative">
+              <select
+                value={driverId}
+                onChange={(e) => setDriverId(e.target.value)}
+                className="w-full pl-3 pr-8 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs sm:text-sm font-medium focus:outline-none focus:border-amber-500 transition-all cursor-pointer appearance-none"
+              >
+                {driversList.map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.name} • {driver.carModel}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Thẻ xem trước trực quan tài xế đang chọn (Preview Card không cần nhấn tính giá) */}
+            {selectedDriver && (
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-3 transition-all">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative shrink-0">
+                    <img
+                      src={selectedDriver.avatar}
+                      alt={selectedDriver.name}
+                      className="w-12 h-12 rounded-xl object-cover ring-2 ring-red-500/70 shadow-md"
+                    />
+                    <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-slate-900"></span>
+                    </span>
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs sm:text-sm font-bold text-white truncate">
+                        {selectedDriver.name}
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-400 bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-800/40">
+                        ★ {selectedDriver.rating}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400 flex-wrap">
+                      <span className="text-slate-300 font-medium truncate">
+                        {selectedDriver.carModel}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="inline-block text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/40">
+                    Sẵn sàng đón
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 4. TÙY CHỌN CHUYẾN ĐI (Nhập trước khi tính giá để tính chính xác giá) */}
           <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
             {/* Checkbox Đi 2 chiều (Khứ hồi) */}
             <div className="flex items-start justify-between gap-3">
@@ -1250,9 +1524,6 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                       Chiều về chỉ tính 65%
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                    Tự động nhân đôi (x2) quãng đường và thời gian; chiều về giảm giá chỉ tính 65% chiều đi.
-                  </p>
                 </div>
               </label>
             </div>
@@ -1300,7 +1571,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
           {/* BƯỚC 1: NÚT TÍNH GIÁ TIỀN (Chỉ hiện khi chưa tính giá) */}
           {!routeResult ? (<div className="pt-2">
               <button type="button" onClick={handleCalculateFare} disabled={isCalculatingRoute || !pickupInput.trim() || !dropoffInput.trim()} className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-red-900/40 flex items-center justify-center gap-2 cursor-pointer">
-                {isCalculatingRoute ? (<span>Đang tính lộ trình VIETMAP...</span>) : (<>
+                {isCalculatingRoute ? (<span>Đang tính lộ trình...</span>) : (<>
                     <span>Tính giá tiền chuyến đi</span>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3"/>
@@ -1309,13 +1580,13 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
               </button>
             </div>) : (
         /* BƯỚC 2: SAU KHI TÍNH GIÁ TIỀN XONG -> HIỆN KẾT QUẢ & FORM ĐẶT LỊCH CHUYẾN ĐI */
-        <form onSubmit={handleSubmitBooking} className="space-y-3.5 pt-1">
+        <form onSubmit={handleSubmitBooking} noValidate className="space-y-3.5 pt-1">
               {/* Box hiển thị Quãng đường, Thời gian và Bóc tách giá chi tiết */}
               {(() => {
                 const discountVal = appliedCoupon ? appliedCoupon.discountAmount : 0;
                 const finalFare = Math.max(0, routeResult.estimatedPrice - discountVal);
                 const conflicted = getConflictedSlot();
-                const selectedDriver = DRIVERS_LIST.find((d) => d.id === driverId) || DRIVERS_LIST[0];
+                const selectedDriver = driversList.find((d) => String(d.id) === String(driverId)) || driversList[0] || DRIVERS_LIST[0];
                 return (<>
                     <div className="p-4 rounded-xl bg-slate-900 border border-red-900/50 space-y-2.5">
                       <div className="flex items-center justify-between text-xs text-slate-300">
@@ -1388,36 +1659,15 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                         <label className="block text-[11px] font-medium text-slate-300 mb-1">
                           Họ và tên <span className="text-red-500">*</span>
                         </label>
-                        <input type="text" required value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Nguyễn Văn A" className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"/>
+                        <input type="text" id="bookingCustomerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Nhập họ tên" className={`w-full px-3 py-2 rounded-xl bg-slate-900 border text-slate-100 text-xs focus:outline-none transition-all ${!customerName.trim() && bookingMessage?.type === 'error' ? 'border-red-500 ring-1 ring-red-500/50' : 'border-slate-700 focus:border-red-500'}`}/>
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-medium text-slate-300 mb-1">
                           Số điện thoại <span className="text-red-500">*</span>
                         </label>
-                        <input type="tel" required value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="0987654321" className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"/>
+                        <input type="tel" id="bookingCustomerPhone" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Nhập SĐT" className={`w-full px-3 py-2 rounded-xl bg-slate-900 border text-slate-100 text-xs focus:outline-none transition-all ${!customerPhone.trim() && bookingMessage?.type === 'error' ? 'border-red-500 ring-1 ring-red-500/50' : 'border-slate-700 focus:border-red-500'}`}/>
                       </div>
-                    </div>
-
-                    {/* Chọn Tài xế phục vụ + Nút xem lịch tài xế */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-[11px] font-medium text-slate-300">
-                          Chọn tài xế phục vụ <span className="text-red-500">*</span>
-                        </label>
-                        <button type="button" onClick={() => setShowScheduleModal(true)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400 hover:text-red-300 bg-red-950/70 hover:bg-red-900/80 px-2 py-0.5 rounded-lg border border-red-800/80 transition-all cursor-pointer">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                          </svg>
-                          <span>Xem lịch lái xe (tránh trùng giờ)</span>
-                        </button>
-                      </div>
-
-                      <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500">
-                        {DRIVERS_LIST.map((driver) => (<option key={driver.id} value={driver.id}>
-                            {driver.name} - {driver.carModel} ({driver.rating}★)
-                          </option>))}
-                      </select>
                     </div>
 
                     {/* Ngày & Giờ đón (Responsive 1 cột trên điện thoại, 2 cột trên tablet/desktop tránh vỡ layout) */}
@@ -1426,7 +1676,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                         <label className="block text-[11px] font-medium text-slate-300 mb-1">
                           Ngày đón <span className="text-red-500">*</span>
                         </label>
-                        <input type="date" required value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500 transition-colors"/>
+                        <input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} style={{ colorScheme: 'dark' }} className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500 transition-colors [color-scheme:dark] cursor-pointer"/>
                       </div>
 
                       <div>
@@ -1435,13 +1685,13 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                             Giờ đón <span className="text-red-500">*</span>
                           </label>
                           {conflicted ? (<span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/60">
-                              <span>⚠️</span> Trùng lịch bận
+                              <span>⚠️</span> Trùng lịch lái xe
                             </span>) : (<span className="text-[10px] text-emerald-400 flex items-center gap-1 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
                               <span>🟢</span> Khả dụng
                             </span>)}
                         </div>
 
-                        <input type="time" required value={pickupTimeStr} onChange={(e) => setPickupTimeStr(e.target.value)} className={`w-full px-3 py-2.5 rounded-xl bg-slate-900 border text-slate-100 text-xs font-mono focus:outline-none transition-colors ${conflicted
+                        <input type="time" value={pickupTimeStr} onChange={(e) => setPickupTimeStr(e.target.value)} style={{ colorScheme: 'dark' }} className={`w-full px-3 py-2.5 rounded-xl bg-slate-900 border text-slate-100 text-xs font-mono focus:outline-none transition-colors [color-scheme:dark] cursor-pointer ${conflicted
                         ? 'border-amber-500 ring-1 ring-amber-500/50'
                         : 'border-slate-700 focus:border-red-500'}`}/>
                       </div>
@@ -1464,14 +1714,23 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                     <div>
                       <label className="block text-[11px] font-medium text-slate-300 mb-1 flex items-center justify-between">
                         <span>Mã giảm giá / Voucher</span>
-                        <span className="text-[10px] text-slate-500">Mã gợi ý: TRUNGANH20, VINFAST50, XEMOI</span>
+                        <span className="text-[10px] text-slate-500">Mã gợi ý: TRUNGANH50K, VINFAST50, TRUNGANH20</span>
                       </label>
                       <div className="flex gap-2">
                         <input type="text" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} placeholder="Nhập mã ưu đãi..." className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs uppercase font-mono tracking-wider focus:outline-none focus:border-red-500"/>
                         {appliedCoupon ? (<button type="button" onClick={handleRemoveCoupon} className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors">
                             Hủy mã
-                          </button>) : (<button type="button" onClick={handleApplyCoupon} className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-md shadow-red-950/50">
-                            Áp dụng
+                          </button>) : (<button type="button" onClick={handleApplyCoupon} disabled={isValidatingCoupon} className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-bold cursor-pointer transition-colors shadow-md shadow-red-950/50 flex items-center gap-1.5">
+                            {isValidatingCoupon ? (
+                              <>
+                                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                <span>Đang kiểm tra...</span>
+                              </>
+                            ) : (
+                              <span>Áp dụng</span>
+                            )}
                           </button>)}
                       </div>
                       {couponMessage && (<p className={`text-[11px] mt-1 font-medium ${couponMessage.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -1484,9 +1743,9 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                       <label className="block text-[11px] font-medium text-slate-300 mb-1">Số lượng hành lý</label>
                       <select value={luggageOption} onChange={(e) => setLuggageOption(e.target.value)} className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500">
                         <option value="Không có vali">Không có vali</option>
-                        <option value="1 vali vừa">1 vali vừa</option>
-                        <option value="2 vali to">2 vali to</option>
-                        <option value="3-4 vali lớn">3-4 vali lớn (Cốp xe VinFast)</option>
+                        <option value="1 vali vừa">1 vali vừa hoặc tương đương</option>
+                        <option value="2 vali to">2 vali to hoặc tương đương</option>
+                        <option value="3-4 vali lớn">3-4 vali lớn hoặc tương đương</option>
                       </select>
                     </div>
 
@@ -1497,10 +1756,11 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                     </div>
 
                     {/* Thông báo gửi booking */}
-                    {bookingMessage && (<div className={`p-2.5 rounded-xl text-xs ${bookingMessage.type === 'success'
-                            ? 'bg-emerald-950/70 border border-emerald-800 text-emerald-300'
-                            : 'bg-red-950/70 border border-red-800 text-red-300'}`}>
-                        {bookingMessage.text}
+                    {bookingMessage && (<div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${bookingMessage.type === 'success'
+                            ? 'bg-emerald-950/80 border border-emerald-700 text-emerald-300'
+                            : 'bg-red-950/80 border border-red-700 text-red-200'}`}>
+                        <span className="text-sm shrink-0">{bookingMessage.type === 'success' ? '✓' : '⚠️'}</span>
+                        <span>{bookingMessage.text}</span>
                       </div>)}
 
                     {/* NÚT "ĐẶT LỊCH CHO CHUYẾN ĐI" */}
@@ -1509,15 +1769,84 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                         {isSubmittingBooking ? (<span>Đang gửi thông tin...</span>) : (<span>Đặt lịch cho chuyến đi ({finalFare.toLocaleString('vi-VN')} đ)</span>)}
                       </button>
                     </div>
-
-                    <p className="text-[10px] text-slate-500 text-center">
-                      Endpoint: <code>POST http://localhost:8080/api/v1/bookings</code> (có kèm <code>waitHours</code>, <code>driverId</code> &amp; <code>discountCode</code>)
-                    </p>
                   </>);
             })()}
             </form>)}
         </div>
       </div>
+
+
+      {/* MODAL SOFT PROMPT WEB PUSH NOTIFICATION (GIẢI THÍCH TRƯỚC ĐỂ ĐẠT 90% TỶ LỆ CHO PHÉP) */}
+      {showPushModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3.5 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+          {/* Lớp nền click để bỏ qua */}
+          <div className="fixed inset-0" onClick={handleSkipPush} />
+
+          <div className="bg-slate-900 border border-slate-700/90 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative z-10 text-center overflow-hidden">
+            {/* Viền đỏ VinFast trên đỉnh */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-600 via-rose-500 to-red-700" />
+
+            {/* Nút đóng góc phải */}
+            <button
+              type="button"
+              onClick={handleSkipPush}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer transition-all border border-slate-700/50"
+              title="Bỏ qua"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Icon chuông thông báo hiệu ứng sóng âm thanh */}
+            <div className="mx-auto w-18 h-18 rounded-3xl bg-gradient-to-br from-red-500/20 via-rose-500/10 to-amber-500/20 border border-red-500/40 flex items-center justify-center relative mb-5 shadow-lg shadow-red-950/40">
+              <span className="animate-ping absolute inline-flex h-12 w-12 rounded-full bg-red-400 opacity-30"></span>
+              <svg className="w-9 h-9 text-red-500 relative z-10 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+              </svg>
+            </div>
+
+            {/* Tiêu đề & Nội dung chuẩn theo yêu cầu */}
+            <h3 className="text-lg sm:text-xl font-extrabold text-white mb-2 tracking-tight">
+              Bật thông báo chuyến xe
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-4">
+              Để nhận thông báo khi tài xế <span className="font-bold text-red-400">{selectedDriver?.name || 'Trung Anh'}</span> tới đón, vui lòng bấm <span className="font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">&quot;Cho phép&quot;</span> trình duyệt gửi thông báo chuyến đi đến bạn!
+            </p>
+
+            {/* Cam kết tiện ích & không spam */}
+            <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400 mb-6 text-left space-y-1.5">
+              <p className="flex items-center gap-2 text-emerald-400 font-medium">
+                <svg className="w-4 h-4 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                <span>Nhận thông báo khi xe chuẩn bị đến đón bạn (không lo lỡ chuyến)</span>
+              </p>
+              <p className="flex items-center gap-2 text-slate-400">
+                <svg className="w-4 h-4 shrink-0 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <span>Không spam quảng cáo • Tắt bất cứ lúc nào</span>
+              </p>
+            </div>
+
+            {/* 2 Nút hành động */}
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={handleConfirmPush}
+                className="w-full py-3 px-4 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 shadow-xl shadow-red-900/50 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
+              >
+                <span>Tôi hiểu rồi, tiếp tục</span>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* MODAL XEM LỊCH HOẠT ĐỘNG CỦA LÁI XE (RỘNG RÃI, ĐẸP MẮT & CHUẨN RESPONSIVE MOBILE) */}
       {showScheduleModal && typeof document !== 'undefined' && createPortal(
@@ -1538,7 +1867,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
 
             {/* Header Modal & Thông tin Tài xế từ API */}
             {(() => {
-                const currentDriverStatic = DRIVERS_LIST.find((d) => d.id === driverId) || DRIVERS_LIST[0];
+                const currentDriverStatic = driversList.find((d) => String(d.id) === String(driverId)) || driversList[0] || DRIVERS_LIST[0];
                 const driverInfo = scheduleData?.driver || {
                     id: driverId,
                     name: currentDriverStatic.name,

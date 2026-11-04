@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+
 export class BookingService {
     /**
      * Tạo đơn đặt xe mới (POST /bookings)
@@ -6,11 +7,20 @@ export class BookingService {
     async createBooking(payload) {
         return apiClient.post('/bookings', payload);
     }
+
     /**
-     * Lấy thông tin chuyến đi theo mã chuyến (GET /bookings/{code})
+     * Lấy thông tin chuyến đi theo mã chuyến (GET /trips/{code})
+     */
+    async getTripByCode(code) {
+        return apiClient.get(`/trips/${code}`);
+    }
+
+    /**
+     * Lấy thông tin chuyến đi (legacy alias)
      */
     async getBookingByCode(code) {
-        return apiClient.get(`/bookings/${code}`);
+        return apiClient.get(`/trips/${code}`);
     }
 }
+
 export const bookingService = new BookingService();

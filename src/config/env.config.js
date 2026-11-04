@@ -11,4 +11,6 @@ export const ENV = {
     // Khóa API dịch vụ VIETMAP (Routing, Autocomplete, Place, Reverse Geocoding)
     VIETMAP_SERVICES_KEY: import.meta.env.VITE_VIETMAP_API_KEY ||
         'cbe88ab71880326cd8d59361805f6bde4adeb92d50777849',
+    // Khóa VAPID Public Key cho Web Push Notification
+    VAPID_PUBLIC_KEY: import.meta.env.VITE_VAPID_PUBLIC_KEY || '',
 };

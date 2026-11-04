@@ -91,7 +91,7 @@ export default function HomePage() {
           <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-10">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-950/70 border border-red-800/50 text-red-300 text-xs font-semibold mb-4 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"/>
-              <span>Dịch vụ xe riêng gia đình cao cấp</span>
+              <span>Dịch vụ đặt xe cao cấp</span>
             </div>
 
             <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
@@ -99,7 +99,7 @@ export default function HomePage() {
             </h1>
 
             <p className="mt-3.5 sm:mt-4 text-sm sm:text-lg text-slate-300 leading-relaxed max-w-2xl mx-auto">
-              Phục vụ xe điện VinFast màu đỏ hiện đại, nội thất sạch sẽ, không mùi xe dịch vụ.
+              Phục vụ xe điện VinFast hiện đại, nội thất sạch sẽ, không mùi xe dịch vụ.
             </p>
 
             {/* Bộ 3 Badge cam kết bắt buộc */}
@@ -144,7 +144,7 @@ export default function HomePage() {
                 Phương Tiện Phục Vụ
               </span>
               <h2 className="text-xl sm:text-2xl font-bold text-white mt-2">
-                Showcase Xe Điện VinFast Limo Green Màu Đỏ
+                Showcase Xe Điện VinFast Limo Green
               </h2>
               <p className="text-xs sm:text-sm text-slate-400 mt-1">
                 Ngoại thất lịch lãm, không gian hàng ghế sau rộng rãi, khoang cốp chứa 3-4 vali lớn.

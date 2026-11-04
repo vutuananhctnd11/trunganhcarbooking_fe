@@ -5,14 +5,15 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('LOGIN');
     // State đăng nhập
-    const [phone, setPhone] = useState('0988123456');
-    const [password, setPassword] = useState('MatKhauCuaToi123');
+    const [phone, setPhone] = useState();
+    const [password, setPassword] = useState();
     // State đăng ký
-    const [registerName, setRegisterName] = useState('Vũ Tuấn Anh');
-    const [registerPhone, setRegisterPhone] = useState('0988123456');
-    const [registerPlate, setRegisterPlate] = useState('30K - 999.88');
-    const [registerCarModel, setRegisterCarModel] = useState('VinFast Limo Green (VF 8)');
-    const [registerPassword, setRegisterPassword] = useState('MatKhauCuaToi123');
+    const [registerName, setRegisterName] = useState();
+    const [registerPhone, setRegisterPhone] = useState();
+    const [registerPlate, setRegisterPlate] = useState();
+    const [registerCarModel, setRegisterCarModel] = useState();
+    const [registerPassword, setRegisterPassword] = useState();
+    const [confirmPasword, setConfirmPasword] = useState();
     const [errorMessage, setErrorMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     if (!isOpen)
@@ -111,7 +112,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white leading-tight">Cổng Tài Xế Trung Anh</h3>
+              <h3 className="text-lg font-bold text-white leading-tight">Cổng tài xế Trung Anh Car</h3>
               <p className="text-xs text-slate-400">Quản lý lịch trình & điều hành chuyến xe</p>
             </div>
           </div>
@@ -131,7 +132,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
         }} className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer ${activeTab === 'LOGIN'
             ? 'bg-red-600 text-white shadow-md shadow-red-950/50'
             : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}>
-            Đăng Nhập Tài Xế
+            Đăng nhập tài xế
           </button>
           <button type="button" onClick={() => {
             setActiveTab('REGISTER');
@@ -139,7 +140,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
         }} className={`flex-1 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer ${activeTab === 'REGISTER'
             ? 'bg-red-600 text-white shadow-md shadow-red-950/50'
             : 'text-slate-400 hover:text-white hover:bg-slate-800/60'}`}>
-            Đăng Ký Tài Xế Mới
+            Đăng ký tài xế mới
           </button>
         </div>
 
@@ -154,7 +155,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
         {/* FORM ĐĂNG NHẬP */}
         {activeTab === 'LOGIN' && (<form onSubmit={handleLogin} className="p-6 space-y-4">
             {/* Nút 1-Click Test Tài khoản Mẫu */}
-            <div className="p-3 rounded-xl bg-gradient-to-r from-red-950/40 via-slate-900 to-amber-950/30 border border-red-900/40 flex items-center justify-between gap-3">
+            {/* <div className="p-3 rounded-xl bg-gradient-to-r from-red-950/40 via-slate-900 to-amber-950/30 border border-red-900/40 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-white truncate">Tài xế mẫu: Trung Anh (Chủ xe)</p>
                 <p className="text-[11px] text-slate-400 truncate">SĐT: 0362.882.882 • Xe VinFast VF e34</p>
@@ -169,7 +170,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
               <span className="bg-slate-900 px-3 text-[11px] text-slate-500 uppercase font-semibold">
                 hoặc đăng nhập bằng SĐT
               </span>
-            </div>
+            </div> */}
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -189,7 +190,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
               {isLoading ? (<>
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
                   <span>Đang đăng nhập...</span>
-                </>) : (<span>Đăng Nhập Lịch Trình</span>)}
+                </>) : (<span>Đăng nhập</span>)}
             </button>
           </form>)}
 
@@ -216,6 +217,13 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
               <input type="password" value={registerPassword} onChange={(e) => setRegisterPassword(e.target.value)} placeholder="VD: MatKhauCuaToi123" required className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-red-500 transition-colors"/>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Xác nhận mật khẩu
+              </label>
+              <input type="password" value={confirmPasword} onChange={(e) => setConfirmPasword(e.target.value)} placeholder="VD: MatKhauCuaToi123" required className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-red-500 transition-colors"/>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
@@ -229,11 +237,11 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
                   Dòng xe VinFast
                 </label>
                 <select value={registerCarModel} onChange={(e) => setRegisterCarModel(e.target.value)} className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-red-500 transition-colors">
-                  <option value="VinFast Limo Green (VF 8)">VinFast Limo Green (VF 8)</option>
-                  <option value="VinFast Limo Green (VF e34)">VinFast Limo Green (VF e34)</option>
-                  <option value="VinFast VF 8 Plus Đỏ">VinFast VF 8 Plus</option>
-                  <option value="VinFast VF 5 Plus">VinFast VF 5 Plus</option>
-                  <option value="VinFast VF 9 Eco">VinFast VF 9</option>
+                  <option value="VinFast Limo Green">VinFast Limo Green</option>
+                  <option value="VinFast VF e34">VinFast VF e34</option>
+                  <option value="VinFast VF 8">VinFast VF 8</option>
+                  <option value="VinFast VF 5">VinFast VF 5</option>
+                  <option value="VinFast VF 6">VinFast VF 6</option>
                 </select>
               </div>
             </div>
@@ -242,7 +250,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
               {isLoading ? (<>
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
                   <span>Đang đăng ký tài xế...</span>
-                </>) : (<span>Đăng Ký & Vào Lịch Trình</span>)}
+                </>) : (<span>Đăng Ký</span>)}
             </button>
           </form>)}
       </div>

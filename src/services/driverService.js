@@ -1,3 +1,4 @@
+import { ENV } from '../config/env.config';
 /**
  * Dịch vụ Quản lý Tài xế & Lịch trình Chuyến đi (Driver Service)
  * Lưu trữ dữ liệu an toàn trên localStorage, hỗ trợ xem lịch trình 30 ngày,
@@ -204,6 +205,71 @@ function generateInitialTrips(driverId) {
 }
 // ---------------- API FUNCTIONS CHO TÀI XẾ ----------------
 export const driverService = {
+    /**
+     * Lấy danh sách tài xế từ Backend API (GET http://localhost:8080/api/v1/drivers?isActive=true)
+     */
+    async getDrivers(isActive = true) {
+        try {
+            const url = `${ENV.API_BASE_URL}/drivers?isActive=${isActive}`;
+            const res = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                },
+            });
+            if (res.ok) {
+                const json = await res.json();
+                let list = [];
+                if (Array.isArray(json)) {
+                    list = json;
+                } else if (Array.isArray(json?.data?.content)) {
+                    list = json.data.content;
+                } else if (Array.isArray(json?.data)) {
+                    list = json.data;
+                } else if (Array.isArray(json?.content)) {
+                    list = json.content;
+                }
+
+                if (Array.isArray(list) && list.length > 0) {
+                    return list.map((d) => {
+                        const isMainDriver = d.id === 1 || String(d.id) === '1' || (d.fullName && d.fullName.toLowerCase().includes('trung anh'));
+                        let avatar = d.avatar || d.avatarUrl;
+                        if (!avatar || avatar.includes('example.com')) {
+                            avatar = isMainDriver
+                                ? 'https://res.cloudinary.com/dzueehiwb/image/upload/v1793693693/profile_driver_fcgfb8.png'
+                                : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80';
+                        }
+
+                        return {
+                            id: String(d.id),
+                            name: d.fullName || d.name || 'Tài xế',
+                            fullName: d.fullName || d.name,
+                            phone: d.phone || '0362.882.882',
+                            avatar,
+                            carModel: d.vehicleModel || d.carModel || 'VinFast Limo Green (VF e34)',
+                            vehicleModel: d.vehicleModel || d.carModel,
+                            plateNumber: d.licensePlate || d.plateNumber || '30K - 868.86',
+                            licensePlate: d.licensePlate || d.plateNumber,
+                            rating: typeof d.rating === 'number' ? d.rating : 5.0,
+                            tripsCount: d.totalTrips || d.tripsCount || 1420,
+                            totalTrips: d.totalTrips || d.tripsCount || 1420,
+                            experienceYears: d.experienceYears || 5,
+                            seatCount: d.seatCount || 5,
+                            isActive: d.isActive !== undefined ? d.isActive : true,
+                            telegramChatId: d.telegramChatId || null,
+                            tag: isMainDriver ? 'Được đánh giá cao nhất' : 'Tài xế chuyên nghiệp, đúng giờ',
+                            experience: `${d.experienceYears || 5} năm kinh nghiệm • Lái xe cẩn thận, chu đáo`,
+                        };
+                    });
+                }
+            }
+        } catch (err) {
+            console.warn('Lỗi kết nối API danh sách tài xế, sử dụng danh sách mặc định:', err);
+        }
+        return null;
+    },
+
     /**
      * Lấy tài xế đang đăng nhập hiện tại
      */
