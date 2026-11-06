@@ -290,13 +290,14 @@ export const driverService = {
      * Đăng nhập tài xế qua Backend API (POST /api/v1/auth/driver/login)
      */
     async login(phone, password) {
-        const cleanPhone = phone.replace(/[^0-9]/g, '');
+        const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+        const baseUrl = (ENV.API_BASE_URL || 'http://localhost:8080/api/v1').replace(/\/+$/, '');
         try {
-            const response = await fetch('http://localhost:8080/api/v1/auth/driver/login', {
+            const response = await fetch(`${baseUrl}/auth/driver/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    phone: cleanPhone || phone.trim(),
+                    phone: cleanPhone || (phone ? phone.trim() : ''),
                     password: password || '123456',
                 }),
             });
@@ -305,28 +306,44 @@ export const driverService = {
                 responseData = await response.json();
             }
             catch { }
-            if (response.ok && responseData?.driver) {
-                const d = responseData.driver;
+
+            // Trích xuất driver data linh hoạt:
+            const d = responseData?.data?.driver || 
+                      responseData?.driver || 
+                      (responseData?.data && (responseData?.data?.id || responseData?.data?.phone || responseData?.data?.fullName) ? responseData?.data : null) ||
+                      (responseData && (responseData?.id || responseData?.phone) ? responseData : null);
+
+            const token = responseData?.data?.token || responseData?.token || responseData?.data?.accessToken || responseData?.accessToken;
+
+            const isSuccess = response.ok && (
+                (responseData?.code >= 200 && responseData?.code < 300) ||
+                responseData?.success === true ||
+                responseData?.status === 200 ||
+                Boolean(d)
+            );
+
+            if (isSuccess && (d || token)) {
+                const rawDriver = d || {};
                 const mappedDriver = {
-                    id: String(d.id),
-                    name: d.fullName || d.name || 'Tài xế',
-                    fullName: d.fullName,
-                    phone: d.phone,
-                    avatar: d.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-                    carModel: d.vehicleModel || 'VinFast Limo Green (VF e34)',
-                    vehicleModel: d.vehicleModel,
-                    plateNumber: d.licensePlate || '30K - 999.88',
-                    licensePlate: d.licensePlate,
-                    rating: typeof d.rating === 'number' ? d.rating : 5.0,
-                    totalTrips: d.totalTrips || 0,
-                    token: responseData.token,
-                    tokenType: responseData.token_type || responseData.tokenType || 'Bearer',
-                    seatCount: d.seatCount,
-                    experienceYears: d.experienceYears,
-                    isActive: d.isActive,
+                    id: String(rawDriver.id || 'driver_default'),
+                    name: rawDriver.fullName || rawDriver.name || 'Tài xế',
+                    fullName: rawDriver.fullName || rawDriver.name || 'Tài xế',
+                    phone: rawDriver.phone || cleanPhone,
+                    avatar: rawDriver.avatar || rawDriver.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+                    carModel: rawDriver.vehicleModel || 'VinFast Limo Green (VF e34)',
+                    vehicleModel: rawDriver.vehicleModel || 'VinFast Limo Green (VF e34)',
+                    plateNumber: rawDriver.licensePlate || '30K - 868.86',
+                    licensePlate: rawDriver.licensePlate || '30K - 868.86',
+                    rating: typeof rawDriver.rating === 'number' ? rawDriver.rating : 5.0,
+                    totalTrips: rawDriver.totalTrips || 0,
+                    token: token,
+                    tokenType: responseData?.data?.tokenType || responseData?.tokenType || 'Bearer',
+                    seatCount: rawDriver.seatCount || 5,
+                    experienceYears: rawDriver.experienceYears || 5,
+                    isActive: rawDriver.isActive !== false,
                 };
-                if (responseData.token) {
-                    localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, responseData.token);
+                if (token) {
+                    localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
                 }
                 localStorage.setItem(STORAGE_KEYS.CURRENT_DRIVER, JSON.stringify(mappedDriver));
                 this.ensureTripsInitialized(mappedDriver.id);
