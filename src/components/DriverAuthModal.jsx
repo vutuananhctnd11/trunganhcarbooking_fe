@@ -5,15 +5,15 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('LOGIN');
     // State đăng nhập
-    const [phone, setPhone] = useState();
-    const [password, setPassword] = useState();
+    const [phone, setPhone] = useState('');
+    const [password, setPassword] = useState('');
     // State đăng ký
-    const [registerName, setRegisterName] = useState();
-    const [registerPhone, setRegisterPhone] = useState();
-    const [registerPlate, setRegisterPlate] = useState();
-    const [registerCarModel, setRegisterCarModel] = useState();
-    const [registerPassword, setRegisterPassword] = useState();
-    const [confirmPasword, setConfirmPasword] = useState();
+    const [registerName, setRegisterName] = useState('');
+    const [registerPhone, setRegisterPhone] = useState('');
+    const [registerPlate, setRegisterPlate] = useState('');
+    const [registerCarModel, setRegisterCarModel] = useState('VinFast Limo Green');
+    const [registerPassword, setRegisterPassword] = useState('');
+    const [confirmPasword, setConfirmPasword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     if (!isOpen)
@@ -29,6 +29,9 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
                     onLoginSuccess(res.driver);
                 onClose();
                 navigate('/driver/schedule');
+                if (typeof window !== 'undefined' && window.location.pathname !== '/driver/schedule') {
+                    window.location.href = '/driver/schedule';
+                }
             }
             else {
                 // Nếu phone là tài xế mẫu Trung Anh (0362882882), fallback tự động sang demo login
@@ -69,7 +72,10 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
                 onLoginSuccess(driver);
             onClose();
             navigate('/driver/schedule');
-        }
+                if (typeof window !== 'undefined' && window.location.pathname !== '/driver/schedule') {
+                    window.location.href = '/driver/schedule';
+                }
+        };
     };
     const handleRegister = async (e) => {
         e.preventDefault();
@@ -104,6 +110,9 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
                     onLoginSuccess(res.driver);
                 onClose();
                 navigate('/driver/schedule');
+                if (typeof window !== 'undefined' && window.location.pathname !== '/driver/schedule') {
+                    window.location.href = '/driver/schedule';
+                }
             }
             else {
                 setErrorMessage(res.message || 'Đăng ký tài xế thất bại.');

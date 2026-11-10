@@ -4,7 +4,7 @@
  */
 export const ENV = {
     // Base URL của Backend Spring Boot API
-    API_BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1',
+    API_BASE_URL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
     // Khóa API hiển thị bản đồ VIETMAP (Style Map)
     VIETMAP_VIEW_KEY: import.meta.env.VITE_VIEW_VIETMAP_API_KEY ||
         '548b3461922df3f33402daeaed39c5bf2790b2b496540844',
