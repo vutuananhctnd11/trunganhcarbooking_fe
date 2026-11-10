@@ -39,6 +39,10 @@ export default function DriverSchedulePage() {
     const [allTrips, setAllTrips] = useState([]);
     const [selectedDateKey, setSelectedDateKey] = useState(''); // YYYY-MM-DD hoặc 'ALL'
     const [statusFilter, setStatusFilter] = useState('ALL');
+    const [api30DaysList, setApi30DaysList] = useState(null);
+    const [currentAvailableSlots, setCurrentAvailableSlots] = useState([]);
+    const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
+    
     // State modal chỉnh sửa chuyến đi
     const [selectedTrip, setSelectedTrip] = useState(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -48,21 +52,36 @@ export default function DriverSchedulePage() {
     const [editStatus, setEditStatus] = useState('PENDING');
     const [editNote, setEditNote] = useState('');
     const [saveSuccessToast, setSaveSuccessToast] = useState('');
+
     // State thông báo chuyến sắp chạy
     const [imminentTrips, setImminentTrips] = useState([]);
     const [hasPlayedSound, setHasPlayedSound] = useState(false);
     const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
-    // Tải dữ liệu tài xế và chuyến đi
-    const loadDriverData = () => {
+
+    // Tải dữ liệu tài xế và gọi API 6.1 (30 ngày tới)
+    const loadDriverData = async () => {
         let driver = driverService.getCurrentDriver();
-        if (!driver) {
-            // Nếu chưa có tài xế đăng nhập, tự động đăng nhập mẫu Trung Anh Car để người dùng trải nghiệm ngay
-            driver = driverService.loginAsDefault();
+        let token = driverService.getAuthToken();
+        // Luôn đảm bảo có tài khoản tài xế và accessToken hợp lệ từ backend để tránh 403 Forbidden
+        if (!driver || !token) {
+            driver = await driverService.loginAsDemo();
         }
         setCurrentDriver(driver);
-        // Tải danh sách 30 ngày
+
+        // Tải danh sách chuyến mẫu từ local store
         const trips = driverService.getUpcoming30DaysTrips(driver.id);
         setAllTrips(trips);
+
+        // Gọi API 6.1: Xem số chuyến mỗi ngày trong 30 ngày tới từ Backend Spring Boot
+        try {
+            const api30Days = await driverService.getMyScheduleNext30Days();
+            if (Array.isArray(api30Days) && api30Days.length > 0) {
+                setApi30DaysList(api30Days);
+            }
+        } catch (e) {
+            console.warn('Cannot fetch API 6.1, using local calculation:', e);
+        }
+
         // Kiểm tra chuyến sắp xuất phát
         const urgent = driverService.getImminentTrips(driver.id);
         setImminentTrips(urgent);
@@ -71,31 +90,124 @@ export default function DriverSchedulePage() {
             setHasPlayedSound(true);
         }
     };
+
+    // Gọi API 6.2 (Hôm nay) hoặc API 6.3 (Theo ngày tùy chọn)
+    const fetchScheduleForDate = async (dateKey) => {
+        if (!dateKey || dateKey === 'ALL') {
+            setCurrentAvailableSlots([]);
+            return;
+        }
+
+        setIsLoadingSchedule(true);
+        const todayStr = formatDateKey(new Date());
+
+        try {
+            let data = null;
+            if (dateKey === todayStr) {
+                // API 6.2: GET /api/v1/driver/my-schedule/today
+                data = await driverService.getMyScheduleToday();
+            } else {
+                // API 6.3: GET /api/v1/driver/my-schedule/by-date?date=YYYY-MM-DD
+                data = await driverService.getMyScheduleByDate(dateKey);
+            }
+
+            if (data) {
+                const slots = data.available_slots || data.availableSlots || [];
+                setCurrentAvailableSlots(slots);
+
+                // Nếu backend trả về danh sách các chuyến bận (busy_trips), đồng bộ vào view nếu hợp lệ
+                const busyList = data.busy_trips || data.busyTrips || [];
+                if (Array.isArray(busyList) && busyList.length > 0) {
+                    setAllTrips((prevTrips) => {
+                        const updated = [...prevTrips];
+                        busyList.forEach((bt) => {
+                            const tripCode = bt.trip_id ? `TAC-${bt.trip_id}` : bt.tripCode;
+                            const exists = updated.find((t) => t.tripCode === tripCode || t.id === bt.id);
+                            if (!exists) {
+                                updated.push({
+                                    id: bt.id || `api_trip_${bt.trip_id || Math.random()}`,
+                                    tripCode: tripCode || 'TAC-AUTO',
+                                    driverId: driverService.getCurrentDriver()?.id || '1',
+                                    customerName: bt.customerName || 'Khách đặt trực tuyến',
+                                    customerPhone: bt.customerPhone || '0362882882',
+                                    pickupAddress: bt.pickupAddress || bt.route?.split('→')[0]?.trim() || 'Hà Nội',
+                                    dropoffAddress: bt.dropoffAddress || bt.route?.split('→')[1]?.trim() || 'Nội Bài',
+                                    pickupDate: dateKey,
+                                    pickupTime: bt.time_display?.slice(0, 5) || bt.pickupTime || '08:00',
+                                    estimatedPrice: bt.estimatedPrice || bt.price || 350000,
+                                    distanceKm: bt.distanceKm || 30,
+                                    passengers: 2,
+                                    carModel: 'VinFast Limo Green (VF e34)',
+                                    status: 'ACCEPTED',
+                                    note: bt.note || 'Chuyến từ hệ thống đặt xe Trung Anh Car',
+                                    createdAt: new Date().toISOString(),
+                                    updatedAt: new Date().toISOString(),
+                                });
+                            }
+                        });
+                        return updated;
+                    });
+                }
+            } else {
+                setCurrentAvailableSlots([]);
+            }
+        } catch (err) {
+            console.warn(`Lỗi gọi API 6.2/6.3 cho ngày ${dateKey}:`, err);
+            setCurrentAvailableSlots([]);
+        } finally {
+            setIsLoadingSchedule(false);
+        }
+    };
+
     useEffect(() => {
         const todayStr = formatDateKey(new Date());
         setSelectedDateKey(todayStr);
         loadDriverData();
+        fetchScheduleForDate(todayStr);
+
         // Tự động kiểm tra chuyến sắp xuất phát mỗi phút
         const interval = setInterval(() => {
-            if (currentDriver) {
-                const urgent = driverService.getImminentTrips(currentDriver.id);
+            const drv = driverService.getCurrentDriver();
+            if (drv) {
+                const urgent = driverService.getImminentTrips(drv.id);
                 setImminentTrips(urgent);
             }
         }, 60000);
         return () => clearInterval(interval);
     }, []);
-    // Tạo danh sách 30 ngày sắp tới từ hôm nay
+
+    // Lắng nghe khi selectedDateKey đổi -> gọi API 6.2 hoặc 6.3
+    useEffect(() => {
+        if (selectedDateKey) {
+            fetchScheduleForDate(selectedDateKey);
+        }
+    }, [selectedDateKey]);
+
+    // Tạo danh sách 30 ngày sắp tới từ API 6.1 (nếu có) hoặc tính từ allTrips
     const next30Days = useMemo(() => {
         const days = [];
         const now = new Date();
         const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
         for (let i = 0; i < 30; i++) {
             const d = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
             const key = formatDateKey(d);
-            const count = allTrips.filter((t) => t.pickupDate === key).length;
+
+            // Kiểm tra xem API 6.1 có dữ liệu ngày này không
+            let count = allTrips.filter((t) => t.pickupDate === key).length;
+            let dayOfWeekLabel = i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : dayNames[d.getDay()];
+
+            if (api30DaysList && Array.isArray(api30DaysList)) {
+                const apiDay = api30DaysList.find((item) => item.date === key || item.dateKey === key);
+                if (apiDay) {
+                    if (apiDay.tripsCount !== undefined) count = apiDay.tripsCount;
+                    if (apiDay.dayOfWeek && i > 1) dayOfWeekLabel = apiDay.dayOfWeek;
+                }
+            }
+
             days.push({
                 dateKey: key,
-                dayOfWeek: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : dayNames[d.getDay()],
+                dayOfWeek: dayOfWeekLabel,
                 dayNumber: d.getDate(),
                 monthNumber: d.getMonth() + 1,
                 isToday: i === 0,
@@ -103,7 +215,7 @@ export default function DriverSchedulePage() {
             });
         }
         return days;
-    }, [allTrips]);
+    }, [allTrips, api30DaysList]);
     // Lọc chuyến đi theo ngày đã chọn và trạng thái
     const filteredTrips = useMemo(() => {
         return allTrips.filter((trip) => {
@@ -340,24 +452,61 @@ export default function DriverSchedulePage() {
             </div>
           </div>
 
-          {/* Dải 30 ngày cuộn ngang */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-700">
+          {/* Dải 30 ngày cuộn ngang mượt mà, hỗ trợ Snap Scroll ngón tay trên điện thoại */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none snap-x snap-mandatory touch-pan-x">
             {next30Days.map((d) => {
             const isSelected = selectedDateKey === d.dateKey;
-            return (<button key={d.dateKey} type="button" onClick={() => setSelectedDateKey(d.dateKey)} className={`flex-shrink-0 w-16 sm:w-20 p-2.5 rounded-xl border text-center transition-all cursor-pointer ${isSelected
-                    ? 'border-red-500 bg-gradient-to-b from-red-950/80 to-slate-900 text-white shadow-lg shadow-red-950/50 scale-105'
-                    : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'}`}>
+            return (<button key={d.dateKey} type="button" onClick={() => setSelectedDateKey(d.dateKey)} className={`flex-shrink-0 w-[72px] sm:w-20 p-2 sm:p-2.5 rounded-xl border text-center transition-all cursor-pointer snap-start active:scale-95 ${isSelected
+                    ? 'border-red-500 bg-gradient-to-b from-red-950/90 to-slate-900 text-white shadow-lg shadow-red-950/60 scale-105 ring-1 ring-red-500/50'
+                    : 'border-slate-800 bg-slate-950/70 text-slate-400 hover:border-slate-700 hover:text-slate-200'}`}>
                   <p className="text-[10px] font-bold uppercase truncate">{d.dayOfWeek}</p>
-                  <p className="text-base sm:text-lg font-black my-0.5 text-white">{d.dayNumber}</p>
+                  <p className="text-lg sm:text-xl font-black my-0.5 text-white">{d.dayNumber}</p>
                   <p className="text-[10px] text-slate-400">Tháng {d.monthNumber}</p>
 
                   {/* Chấm hiển thị số chuyến */}
-                  {d.tripsCount > 0 ? (<span className="inline-block mt-1 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-red-600 text-white">
+                  {d.tripsCount > 0 ? (<span className="inline-block mt-1 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-red-600 text-white shadow-sm shadow-red-900/60">
                       {d.tripsCount} xe
-                    </span>) : (<span className="inline-block mt-1 text-[9px] text-slate-600">Trống</span>)}
+                    </span>) : (<span className="inline-block mt-1 text-[9px] text-slate-600 font-medium">Trống</span>)}
                 </button>);
         })}
           </div>
+
+          {/* HIỂN THỊ KHUNG GIỜ CÒN TRỐNG TỪ API 6.2 & 6.3 (AVAILABLE SLOTS) */}
+          {selectedDateKey !== 'ALL' && (
+            <div className="mt-4 pt-3.5 border-t border-slate-800/80">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Khung giờ tài xế còn trống (API 6.2 / 6.3):
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {isLoadingSchedule ? 'Đang kiểm tra...' : `${currentAvailableSlots.length} mốc giờ sẵn sàng`}
+                </span>
+              </div>
+
+              {isLoadingSchedule ? (
+                <div className="py-2 text-center text-xs text-slate-400">
+                  <span className="inline-block w-3.5 h-3.5 border-2 border-red-500 border-t-transparent rounded-full animate-spin mr-2" />
+                  Đang đồng bộ lịch trình với server...
+                </div>
+              ) : currentAvailableSlots.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                  {currentAvailableSlots.map((slot, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 font-mono text-xs font-semibold"
+                    >
+                      {slot}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 italic">
+                  Không có mốc giờ trống cố định hoặc đã nhận kín lịch trong ngày này.
+                </p>
+              )}
+            </div>
+          )}
         </section>
 
         {/* PHẦN 3: DANH SÁCH CÁC CHUYẾN ĐI (Trip Cards List) */}
@@ -441,10 +590,11 @@ export default function DriverSchedulePage() {
                         <p className="text-[11px] text-slate-400">{trip.customerPhone}</p>
                       </div>
 
-                      <a href={`tel:${trip.customerPhone}`} onClick={(e) => e.stopPropagation()} className="p-2 rounded-lg bg-emerald-950 hover:bg-emerald-900 text-emerald-400 transition-colors flex-shrink-0" title="Gọi khách">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                      <a href={`tel:${trip.customerPhone}`} onClick={(e) => e.stopPropagation()} className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-md shadow-emerald-950/60 shrink-0 active:scale-95" title="Bấm gọi ngay cho khách">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                         </svg>
+                        <span>Gọi khách</span>
                       </a>
                     </div>
 

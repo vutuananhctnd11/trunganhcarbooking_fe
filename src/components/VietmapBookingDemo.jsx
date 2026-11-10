@@ -1115,6 +1115,29 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                     text: `Đặt chuyến thành công! Mã chuyến: ${tripCode}. Đang chuyển trang tracking...`,
                 });
                 sessionStorage.setItem(`trip_${tripCode}`, JSON.stringify(payload));
+                try {
+                    const localRecord = {
+                        tripCode,
+                        customerName: payload.customerName,
+                        customerPhone: payload.customerPhone,
+                        pickupAddress: payload.pickupAddress,
+                        dropoffAddress: payload.dropoffAddress,
+                        pickupDate: payload.pickupTime ? payload.pickupTime.split('T')[0] : pickupDate,
+                        pickupTime: payload.pickupTime ? (payload.pickupTime.includes('T') ? payload.pickupTime.split('T')[1].slice(0, 5) : payload.pickupTime) : pickupTimeStr,
+                        estimatedPrice: payload.estimatedPrice,
+                        status: 'PENDING',
+                        driverName: selectedDriver?.name || 'Tài xế Trung Anh',
+                        driverPhone: selectedDriver?.phone || '0362.882.882',
+                        carModel: selectedDriver?.carModel || 'VinFast Limo Green (VF e34)',
+                        licensePlate: selectedDriver?.plateNumber || '35H - 182.29',
+                        createdAt: new Date().toISOString(),
+                    };
+                    const existing = JSON.parse(localStorage.getItem('tac_booked_trips') || '[]');
+                    const filtered = [localRecord, ...existing.filter((x) => x.tripCode !== tripCode)].slice(0, 50);
+                    localStorage.setItem('tac_booked_trips', JSON.stringify(filtered));
+                } catch (e) {
+                    console.warn('Cannot persist booked trip to localStorage:', e);
+                }
 
                 // Bắn notification ngay nếu khách đã cấp quyền
                 if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
@@ -1311,7 +1334,7 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
         </div>
 
         {/* CỘT NHỎ (5 CỘT): NHẬP ĐỊA CHỈ & THÔNG TIN CHUYẾN ĐI */}
-        <div className="lg:col-span-5 bg-slate-950/90 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col space-y-4">
+        <div id="booking-trip-info" className="lg:col-span-5 bg-slate-950/90 border border-slate-800 rounded-2xl p-5 shadow-2xl flex flex-col space-y-4 scroll-mt-24">
           <div className="border-b border-slate-800 pb-3">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-red-500"/>
@@ -1670,105 +1693,164 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
                       </div>
                     </div>
 
-                    {/* Ngày & Giờ đón (Responsive 1 cột trên điện thoại, 2 cột trên tablet/desktop tránh vỡ layout) */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                          Ngày đón <span className="text-red-500">*</span>
+                    {/* KHỐI NGÀY & GIỜ ĐÓN & NÚT ĐẶT LỊCH (ĐẶT CẠNH NHAU ĐỂ NGƯỜI DÙNG THAO TÁC THUẬN TIỆN NHẤT) */}
+                    <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                          </svg>
+                          <span>NGÀY & GIỜ ĐÓN <span className="text-red-500">*</span></span>
                         </label>
-                        <input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} style={{ colorScheme: 'dark' }} className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500 transition-colors [color-scheme:dark] cursor-pointer"/>
+
+                        {/* NÚT XEM LỊCH LÁI XE TRỰC TIẾP TẠI KHỐI NGÀY GIỜ */}
+                        <button
+                          type="button"
+                          onClick={() => setShowScheduleModal(true)}
+                          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-red-300 hover:text-white bg-red-950/80 hover:bg-red-900 px-2.5 py-1.5 rounded-lg border border-red-700/80 transition-all cursor-pointer shadow-sm"
+                          title="Xem lịch chi tiết và chọn khung giờ trống của tài xế"
+                        >
+                          <svg className="w-3.5 h-3.5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Xem lịch tài xế</span>
+                        </button>
                       </div>
 
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block text-[11px] font-medium text-slate-300">
-                            Giờ đón <span className="text-red-500">*</span>
+                      {/* Responsive 1 cột trên điện thoại, 2 cột trên tablet/desktop */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                            Ngày đón <span className="text-red-500">*</span>
                           </label>
-                          {conflicted ? (<span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/60">
-                              <span>⚠️</span> Trùng lịch lái xe
-                            </span>) : (<span className="text-[10px] text-emerald-400 flex items-center gap-1 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
-                              <span>🟢</span> Khả dụng
-                            </span>)}
+                          <input type="date" value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} style={{ colorScheme: 'dark' }} className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500 transition-colors [color-scheme:dark] cursor-pointer"/>
                         </div>
 
-                        <input type="time" value={pickupTimeStr} onChange={(e) => setPickupTimeStr(e.target.value)} style={{ colorScheme: 'dark' }} className={`w-full px-3 py-2.5 rounded-xl bg-slate-900 border text-slate-100 text-xs font-mono focus:outline-none transition-colors [color-scheme:dark] cursor-pointer ${conflicted
-                        ? 'border-amber-500 ring-1 ring-amber-500/50'
-                        : 'border-slate-700 focus:border-red-500'}`}/>
-                      </div>
-                    </div>
-
-                    {/* Cảnh báo nếu trùng lịch bận của tài xế */}
-                    {conflicted && (<div className="p-2.5 rounded-xl bg-amber-950/70 border border-amber-800 text-amber-300 text-[11px] flex items-start gap-2">
-                        <span className="text-base leading-none">⚠️</span>
-                        <div className="flex-1">
-                          <p className="font-bold">
-                            Tài xế {scheduleData?.driver?.name || selectedDriver.name} đang bận khung giờ {conflicted.time_display}!
-                          </p>
-                          <p className="text-[10px] text-amber-200 mt-0.5">
-                            Lộ trình: {conflicted.route} {conflicted.travel_time ? `(~${conflicted.travel_time} phút)` : ''}. Vui lòng chọn mốc giờ trống khác hoặc đổi tài xế.
-                          </p>
-                        </div>
-                      </div>)}
-
-                    {/* Trường Nhập Mã Giảm Giá */}
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1 flex items-center justify-between">
-                        <span>Mã giảm giá / Voucher</span>
-                        <span className="text-[10px] text-slate-500">Mã gợi ý: TRUNGANH50K, VINFAST50, TRUNGANH20</span>
-                      </label>
-                      <div className="flex gap-2">
-                        <input type="text" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} placeholder="Nhập mã ưu đãi..." className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs uppercase font-mono tracking-wider focus:outline-none focus:border-red-500"/>
-                        {appliedCoupon ? (<button type="button" onClick={handleRemoveCoupon} className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors">
-                            Hủy mã
-                          </button>) : (<button type="button" onClick={handleApplyCoupon} disabled={isValidatingCoupon} className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-bold cursor-pointer transition-colors shadow-md shadow-red-950/50 flex items-center gap-1.5">
-                            {isValidatingCoupon ? (
-                              <>
-                                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                <span>Đang kiểm tra...</span>
-                              </>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-medium text-slate-300">
+                              Giờ đón <span className="text-red-500">*</span>
+                            </label>
+                            {conflicted ? (
+                              <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/60">
+                                <span>⚠️</span> Trùng lịch lái xe
+                              </span>
                             ) : (
-                              <span>Áp dụng</span>
+                              <span className="text-[10px] text-emerald-400 flex items-center gap-1 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
+                                <span>🟢</span> Khả dụng
+                              </span>
                             )}
-                          </button>)}
+                          </div>
+
+                          <input type="time" value={pickupTimeStr} onChange={(e) => setPickupTimeStr(e.target.value)} style={{ colorScheme: 'dark' }} className={`w-full px-3 py-2.5 rounded-xl bg-slate-950 border text-slate-100 text-xs font-mono focus:outline-none transition-colors [color-scheme:dark] cursor-pointer ${conflicted
+                          ? 'border-amber-500 ring-1 ring-amber-500/50'
+                          : 'border-slate-700 focus:border-red-500'}`}/>
+                        </div>
                       </div>
-                      {couponMessage && (<p className={`text-[11px] mt-1 font-medium ${couponMessage.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {couponMessage.text}
-                        </p>)}
+
+                      {/* Cảnh báo nếu trùng lịch bận của tài xế */}
+                      {conflicted && (
+                        <div className="p-2.5 rounded-xl bg-amber-950/70 border border-amber-800 text-amber-300 text-[11px] flex items-start gap-2">
+                          <span className="text-base leading-none">⚠️</span>
+                          <div className="flex-1">
+                            <p className="font-bold">
+                              Tài xế {scheduleData?.driver?.name || selectedDriver.name} đang bận khung giờ {conflicted.time_display}!
+                            </p>
+                            <p className="text-[10px] text-amber-200 mt-0.5">
+                              Lộ trình: {conflicted.route} {conflicted.travel_time ? `(~${conflicted.travel_time} phút)` : ''}. Vui lòng bấm &quot;Xem lịch tài xế&quot; để chọn mốc giờ trống khác.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* NÚT ĐẶT LỊCH CHO CHUYẾN ĐI - ĐẶT NGAY TẠI KHỐI NGÀY GIỜ ĐỂ KHÁCH THAO TÁC NHANH */}
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmittingBooking}
+                          className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-95 transition-all shadow-xl shadow-red-900/40 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                        >
+                          {isSubmittingBooking ? (
+                            <span>Đang gửi thông tin đặt chuyến...</span>
+                          ) : (
+                            <>
+                              <span>Đặt lịch cho chuyến đi ({finalFare.toLocaleString('vi-VN')} đ)</span>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                              </svg>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Hành lý */}
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1">Số lượng hành lý</label>
-                      <select value={luggageOption} onChange={(e) => setLuggageOption(e.target.value)} className="w-full px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500">
-                        <option value="Không có vali">Không có vali</option>
-                        <option value="1 vali vừa">1 vali vừa hoặc tương đương</option>
-                        <option value="2 vali to">2 vali to hoặc tương đương</option>
-                        <option value="3-4 vali lớn">3-4 vali lớn hoặc tương đương</option>
-                      </select>
+                    {/* KHỐI TÙY CHỌN BỔ SUNG (VOUCHER, HÀNH LÝ, GHI CHÚ) */}
+                    <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-3">
+                      <span className="text-xs font-semibold text-slate-400 block border-b border-slate-800 pb-2">
+                        Tùy chọn bổ sung (Không bắt buộc)
+                      </span>
+
+                      {/* Trường Nhập Mã Giảm Giá */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-300 mb-1 flex items-center justify-between">
+                          <span>Mã giảm giá / Voucher</span>
+                          <span className="text-[10px] text-slate-500">Mã gợi ý: TRUNGANH50K, VINFAST50</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <input type="text" value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} placeholder="Nhập mã ưu đãi..." className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs uppercase font-mono tracking-wider focus:outline-none focus:border-red-500"/>
+                          {appliedCoupon ? (
+                            <button type="button" onClick={handleRemoveCoupon} className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors">
+                              Hủy mã
+                            </button>
+                          ) : (
+                            <button type="button" onClick={handleApplyCoupon} disabled={isValidatingCoupon} className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-bold cursor-pointer transition-colors shadow-md shadow-red-950/50 flex items-center gap-1.5 shrink-0">
+                              {isValidatingCoupon ? (
+                                <>
+                                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                  <span>Kiểm tra...</span>
+                                </>
+                              ) : (
+                                <span>Áp dụng</span>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {couponMessage && (
+                          <p className={`text-[11px] mt-1 font-medium ${couponMessage.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {couponMessage.text}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Hành lý */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-300 mb-1">Số lượng hành lý mang theo</label>
+                        <select value={luggageOption} onChange={(e) => setLuggageOption(e.target.value)} className="w-full px-2.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500">
+                          <option value="Không có vali">Không có vali</option>
+                          <option value="1 vali vừa">1 vali vừa hoặc tương đương</option>
+                          <option value="2 vali to">2 vali to hoặc tương đương</option>
+                          <option value="3-4 vali lớn">3-4 vali lớn hoặc tương đương</option>
+                        </select>
+                      </div>
+
+                      {/* Ghi chú riêng */}
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-300 mb-1">Ghi chú riêng cho tài xế</label>
+                        <input type="text" value={customNote} onChange={(e) => setCustomNote(e.target.value)} placeholder="VD: Cần xe sạch sẽ, có ghế trẻ em..." className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"/>
+                      </div>
                     </div>
 
-                    {/* Ghi chú riêng */}
-                    <div>
-                      <label className="block text-[11px] font-medium text-slate-300 mb-1">Ghi chú riêng</label>
-                      <input type="text" value={customNote} onChange={(e) => setCustomNote(e.target.value)} placeholder="VD: Cần xe sạch sẽ, có ghế trẻ em..." className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs focus:outline-none focus:border-red-500"/>
-                    </div>
-
-                    {/* Thông báo gửi booking */}
-                    {bookingMessage && (<div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${bookingMessage.type === 'success'
-                            ? 'bg-emerald-950/80 border border-emerald-700 text-emerald-300'
-                            : 'bg-red-950/80 border border-red-700 text-red-200'}`}>
+                    {/* Thông báo kết quả gửi booking */}
+                    {bookingMessage && (
+                      <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${bookingMessage.type === 'success'
+                        ? 'bg-emerald-950/80 border border-emerald-700 text-emerald-300'
+                        : 'bg-red-950/80 border border-red-700 text-red-200'}`}>
                         <span className="text-sm shrink-0">{bookingMessage.type === 'success' ? '✓' : '⚠️'}</span>
                         <span>{bookingMessage.text}</span>
-                      </div>)}
-
-                    {/* NÚT "ĐẶT LỊCH CHO CHUYẾN ĐI" */}
-                    <div className="pt-1">
-                      <button type="submit" disabled={isSubmittingBooking} className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-95 transition-all shadow-xl shadow-red-900/40 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60">
-                        {isSubmittingBooking ? (<span>Đang gửi thông tin...</span>) : (<span>Đặt lịch cho chuyến đi ({finalFare.toLocaleString('vi-VN')} đ)</span>)}
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </>);
             })()}
             </form>)}
@@ -1848,168 +1930,251 @@ export default function VietmapBookingDemo({ initialDriverId, fixedTripData }) {
         document.body
       )}
 
-      {/* MODAL XEM LỊCH HOẠT ĐỘNG CỦA LÁI XE (RỘNG RÃI, ĐẸP MẮT & CHUẨN RESPONSIVE MOBILE) */}
+      {/* MODAL XEM LỊCH HOẠT ĐỘNG CỦA LÁI XE (TỐI ƯU CỰC MẠNH CHO ĐIỆN THOẠI & TOUCH-FRIENDLY) */}
       {showScheduleModal && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
           {/* Lớp nền click để đóng */}
           <div className="fixed inset-0" onClick={() => setShowScheduleModal(false)} />
 
-          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl sm:rounded-3xl max-w-2xl w-full p-4 sm:p-6 md:p-7 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar z-10">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-t-3xl sm:rounded-3xl max-w-2xl w-full shadow-2xl relative max-h-[92dvh] sm:max-h-[88vh] flex flex-col overflow-hidden z-10 animate-in slide-in-from-bottom duration-200">
+            {/* Thanh vuốt nhỏ trên đỉnh (Mobile bottom sheet handle) */}
+            <div className="sm:hidden flex justify-center pt-2.5 pb-1">
+              <div className="w-10 h-1 rounded-full bg-slate-700" />
+            </div>
+
             {/* Viền Crimson trang trí đỉnh modal */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-600 via-rose-500 to-red-700 rounded-t-2xl sm:rounded-t-3xl pointer-events-none"/>
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-600 via-rose-500 to-red-700 rounded-t-3xl pointer-events-none z-30"/>
 
             {/* Nút đóng modal */}
-            <button type="button" onClick={() => setShowScheduleModal(false)} className="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-all border border-slate-700/70 z-20" title="Đóng cửa sổ">
+            <button
+              type="button"
+              onClick={() => setShowScheduleModal(false)}
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 w-9 h-9 rounded-full bg-slate-800/95 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-all border border-slate-700 shadow-md z-30 active:scale-90"
+              title="Đóng cửa sổ"
+            >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/>
               </svg>
             </button>
 
-            {/* Header Modal & Thông tin Tài xế từ API */}
             {(() => {
-                const currentDriverStatic = driversList.find((d) => String(d.id) === String(driverId)) || driversList[0] || DRIVERS_LIST[0];
-                const driverInfo = scheduleData?.driver || {
-                    id: driverId,
-                    name: currentDriverStatic.name,
-                    vehicle: currentDriverStatic.carModel,
-                    license_plate: currentDriverStatic.plateNumber,
-                    rating: currentDriverStatic.rating,
-                };
-                const busyTrips = scheduleData?.busy_trips || scheduleData?.busyTrips || [];
-                let availableSlots = scheduleData?.available_slots || scheduleData?.availableSlots || [];
-                if (availableSlots.length === 0) {
-                    availableSlots = calculateAvailableSlots(busyTrips);
-                }
-                const displayDate = scheduleData?.selected_date || scheduleData?.selectedDate || pickupDate;
-                return (<div className="space-y-4">
-                  {/* Card thông tin tài xế */}
-                  <div className="flex items-center gap-3 sm:gap-4 border-b border-slate-800 pb-4 pr-10">
-                    <img src={currentDriverStatic.avatar} alt={driverInfo.name} className="w-13 h-13 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-red-500 shadow-lg shadow-red-950/40 flex-shrink-0"/>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base sm:text-xl font-extrabold text-white truncate">
-                          {driverInfo.name}
-                        </h3>
-                        <span className="text-xs sm:text-sm text-amber-400 font-bold bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-800/50 flex items-center gap-1">
-                          ★ {driverInfo.rating || 5.0}
-                        </span>
+              const currentDriverStatic = driversList.find((d) => String(d.id) === String(driverId)) || driversList[0] || DRIVERS_LIST[0];
+              const driverInfo = scheduleData?.driver || {
+                id: driverId,
+                name: currentDriverStatic.name,
+                vehicle: currentDriverStatic.carModel,
+                license_plate: currentDriverStatic.plateNumber,
+                rating: currentDriverStatic.rating,
+              };
+              const busyTrips = scheduleData?.busy_trips || scheduleData?.busyTrips || [];
+              let availableSlots = scheduleData?.available_slots || scheduleData?.availableSlots || [];
+              if (availableSlots.length === 0) {
+                availableSlots = calculateAvailableSlots(busyTrips);
+              }
+              const displayDate = scheduleData?.selected_date || scheduleData?.selectedDate || pickupDate;
+
+              // Sinh danh sách 7 ngày tới để người dùng điện thoại đổi ngày chỉ bằng 1 chạm
+              const modalDays = [];
+              const baseNow = new Date();
+              for (let i = 0; i < 7; i++) {
+                const targetD = new Date(baseNow.getFullYear(), baseNow.getMonth(), baseNow.getDate() + i);
+                const yStr = targetD.getFullYear();
+                const mStr = String(targetD.getMonth() + 1).padStart(2, '0');
+                const dStr = String(targetD.getDate()).padStart(2, '0');
+                const k = `${yStr}-${mStr}-${dStr}`;
+                const label = `${dStr}/${mStr}`;
+                const dayTitle = i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : `Thứ ${targetD.getDay() === 0 ? 'CN' : targetD.getDay() + 1}`;
+                modalDays.push({ key: k, label, dayTitle, isToday: i === 0 });
+              }
+
+              return (
+                <>
+                  {/* 1. HEADER CỐ ĐỊNH: Thông tin tài xế */}
+                  <div className="shrink-0 p-3.5 sm:p-5 pb-3 border-b border-slate-800 bg-slate-900/95 pr-14">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <img
+                        src={currentDriverStatic.avatar}
+                        alt={driverInfo.name}
+                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-red-500 shadow-xl shadow-red-950/60 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                          <h3 className="text-base sm:text-lg font-extrabold text-white truncate">
+                            {driverInfo.name}
+                          </h3>
+                          <span className="text-[11px] text-amber-400 font-bold bg-amber-950/50 px-2 py-0.5 rounded-md border border-amber-800/50 flex items-center gap-1 shrink-0">
+                            ★ {driverInfo.rating || 5.0}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                          <span className="text-slate-300 font-medium truncate max-w-[150px] sm:max-w-none">
+                            {driverInfo.vehicle || 'VinFast Limo Green'}
+                          </span>
+                          <span className="text-slate-600">•</span>
+                          <span className="font-medium text-black font-bold bg-white px-1.5 py-0.2 rounded border border-black text-[11px] shrink-0">
+                            {driverInfo.license_plate || '35H - 182.29'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
-                        <span className="text-slate-300 font-medium">{driverInfo.vehicle || 'VinFast Limo Green'}</span>
-                        <span className="text-slate-600">•</span>
-                        <span className="font-medium text-black font-bold bg-white px-2 py-0.5 rounded border border-black text-xs">
-                          {driverInfo.license_plate || '35H - 18229'}
-                        </span>
+                    </div>
+
+                    {/* DẢI TRƯỢT 7 NGÀY TỚI ĐỔI NGÀY 1 CHẠM TRÊN ĐIỆN THOẠI */}
+                    <div className="mt-3 pt-2.5 border-t border-slate-800/80">
+                      <p className="text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center justify-between">
+                        <span>Chạm chọn ngày xem lịch:</span>
+                        <span className="text-red-400 font-mono font-bold">{displayDate}</span>
+                      </p>
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none snap-x">
+                        {modalDays.map((d) => {
+                          const isAct = displayDate === d.key;
+                          return (
+                            <button
+                              key={d.key}
+                              type="button"
+                              onClick={() => {
+                                setPickupDate(d.key);
+                                fetchDriverSchedule(driverId, d.key);
+                              }}
+                              className={`shrink-0 px-2.5 py-1.5 rounded-xl text-center border transition-all cursor-pointer snap-start active:scale-95 ${
+                                isAct
+                                  ? 'bg-red-600 text-white border-red-500 shadow-md shadow-red-950/60 font-bold scale-102'
+                                  : 'bg-slate-950/80 text-slate-400 border-slate-800 hover:text-white hover:border-slate-700'
+                              }`}
+                            >
+                              <span className="block text-[10px] leading-tight opacity-90">{d.dayTitle}</span>
+                              <span className="block text-xs font-mono font-bold mt-0.5">{d.label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
 
-                  {/* Thanh chọn ngày & Làm mới lịch */}
-                  <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-950/80 p-3 rounded-2xl border border-slate-800">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                        Lịch trình ngày:
-                      </span>
-                      <span className="text-sm sm:text-base text-red-400 font-mono font-bold bg-red-950/80 px-2.5 py-0.5 rounded-lg border border-red-900/70">
-                        {displayDate}
-                      </span>
-                    </div>
+                  {/* 2. BODY CUỘN DUY NHẤT */}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-3.5 sm:p-5 space-y-4">
+                    {/* Danh sách các chuyến bận */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50 shrink-0"/>
+                          Khung giờ ĐÃ CÓ CHUYẾN (Bận):
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {busyTrips.length} chuyến đã nhận
+                        </span>
+                      </div>
 
-                    <button type="button" onClick={() => fetchDriverSchedule(driverId, pickupDate)} disabled={isLoadingSchedule} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors" title="Cập nhật lại lịch từ hệ thống">
-                      <svg className={`w-3.5 h-3.5 ${isLoadingSchedule ? 'animate-spin text-red-400' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                      </svg>
-                      <span>{isLoadingSchedule ? 'Đang tải...' : 'Làm mới'}</span>
-                    </button>
-                  </div>
-
-                  {/* 1. DANH SÁCH CÁC CHUYẾN ĐÃ BẬN (busy_trips) */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50"/>
-                        Khung giờ tài xế ĐÃ CÓ CHUYẾN (Bận):
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        {busyTrips.length} chuyến đã đặt
-                      </span>
-                    </div>
-
-                    {busyTrips.length > 0 ? (<div className="space-y-2">
-                        {busyTrips.map((trip, idx) => (<div key={trip.trip_id || idx} className="p-3 sm:p-3.5 rounded-xl bg-gradient-to-r from-red-950/40 to-slate-950/70 border border-red-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-rose-300 bg-red-950/90 px-2.5 py-1 rounded-lg border border-red-800 font-bold text-xs sm:text-sm">
-                                  {trip.time_display}
-                                </span>
-                                {trip.trip_id && (<span className="text-[10px] text-slate-400 font-medium">#{trip.trip_id}</span>)}
+                      {busyTrips.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {busyTrips.map((trip, idx) => (
+                            <div
+                              key={trip.trip_id || idx}
+                              className="p-2.5 rounded-xl bg-gradient-to-r from-red-950/40 to-slate-950/70 border border-red-900/60 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="space-y-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-rose-300 bg-red-950/90 px-2 py-0.5 rounded-lg border border-red-800 font-bold text-xs shrink-0">
+                                    {trip.time_display}
+                                  </span>
+                                  {trip.trip_id && (
+                                    <span className="text-[10px] text-slate-400 font-medium truncate">#{trip.trip_id}</span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-200 truncate mt-0.5">
+                                  <span className="text-slate-400 mr-1">Tuyến:</span>
+                                  <strong className="text-white font-medium">{trip.route}</strong>
+                                </p>
                               </div>
-                              <p className="text-xs text-slate-200 flex items-center gap-1 mt-1">
-                                <span className="text-slate-400">Lộ trình:</span>
-                                <strong className="text-white font-semibold">{trip.route}</strong>
-                              </p>
-                            </div>
 
-                            <div className="flex items-center gap-2 self-start sm:self-center">
-                              {(trip.tralvel_time || trip.travel_time) && (<span className="text-[11px] text-slate-400 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
-                                  ~{trip.tralvel_time || trip.travel_time} phút
-                                </span>)}
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-red-900/70 text-red-300 border border-red-800 whitespace-nowrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-red-900/70 text-red-300 border border-red-800 whitespace-nowrap shrink-0">
                                 Đã bận
                               </span>
                             </div>
-                          </div>))}
-                      </div>) : (<div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-center text-xs text-slate-300">
-                        <span className="text-emerald-400 font-semibold block mb-0.5">✓ Tài xế hiện chưa có chuyến nào trong ngày này.</span>
-                        <span className="text-slate-400">Tất cả các mốc giờ bên dưới đều khả dụng để bạn đặt xe!</span>
-                      </div>)}
-                  </div>
-
-                  {/* 2. DANH SÁCH CÁC MỐC GIỜ KHẢ DỤNG (available_slots) */}
-                  <div className="space-y-2.5 pt-4 border-t border-slate-800">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"/>
-                        Mốc giờ KHẢ DỤNG (Chạm để chọn giờ đón):
-                      </span>
-                      <span className="text-[11px] text-slate-400">
-                        {availableSlots.length} mốc giờ trống
-                      </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-emerald-950/30 border border-emerald-900/50 text-center text-xs text-slate-300">
+                          <span className="text-emerald-400 font-semibold block mb-0.5">✓ Tài xế hiện chưa có chuyến nào trong ngày này.</span>
+                          <span className="text-slate-400 text-[11px]">Bạn có thể thoải mái chọn bất kỳ mốc giờ nào bên dưới!</span>
+                        </div>
+                      )}
                     </div>
 
-                    {availableSlots.length > 0 ? (<div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 sm:gap-2.5 max-h-56 overflow-y-auto custom-scrollbar p-1">
-                        {availableSlots.map((slot, sIdx) => {
+                    {/* Danh sách các mốc giờ khả dụng */}
+                    <div className="space-y-2 pt-2.5 border-t border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"/>
+                          Mốc giờ KHẢ DỤNG (Chạm để chọn):
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {availableSlots.length} mốc giờ trống
+                        </span>
+                      </div>
+
+                      {isLoadingSchedule ? (
+                        <div className="py-6 text-center text-xs text-slate-400">
+                          <span className="inline-block w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin mr-2" />
+                          Đang tải lịch trình tài xế...
+                        </div>
+                      ) : availableSlots.length > 0 ? (
+                        <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2">
+                          {availableSlots.map((slot, sIdx) => {
                             const isSelected = pickupTimeStr === slot;
-                            return (<button key={sIdx} type="button" onClick={() => {
-                                    setPickupTimeStr(slot);
-                                    setShowScheduleModal(false);
-                                }} className={`p-2.5 sm:p-3 rounded-xl text-center border transition-all cursor-pointer ${isSelected
-                                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg shadow-emerald-950/60 scale-102 ring-2 ring-emerald-500/50'
-                                    : 'bg-slate-800/90 hover:bg-emerald-950/70 text-slate-200 hover:text-emerald-300 border-slate-700 hover:border-emerald-700'}`}>
-                              <span className="block font-mono font-bold text-sm sm:text-base leading-tight">
-                                {slot}
-                              </span>
-                              <span className="text-[10px] opacity-80 block mt-0.5">
-                                {isSelected ? '✓ Đang chọn' : 'Trống'}
-                              </span>
-                            </button>);
-                        })}
-                      </div>) : (<p className="text-xs text-slate-400 italic py-2 text-center">
-                        Tất cả các mốc giờ trong ngày đã được đặt kín.
-                      </p>)}
+                            return (
+                              <button
+                                key={sIdx}
+                                type="button"
+                                onClick={() => {
+                                  setPickupTimeStr(slot);
+                                  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                                    try { navigator.vibrate(30); } catch {}
+                                  }
+                                }}
+                                className={`py-2 px-1 rounded-xl text-center border transition-all cursor-pointer min-h-[46px] flex flex-col items-center justify-center active:scale-92 ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-400/50 scale-102'
+                                    : 'bg-slate-800/90 hover:bg-emerald-950/70 text-slate-200 hover:text-emerald-300 border-slate-700/80 hover:border-emerald-700'
+                                }`}
+                              >
+                                <span className="block font-mono font-bold text-sm sm:text-base leading-tight">
+                                  {slot}
+                                </span>
+                                <span className="text-[10px] opacity-80 block mt-0.5 whitespace-nowrap">
+                                  {isSelected ? '✓ Đã chọn' : 'Trống'}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic py-3 text-center">
+                          Tất cả các mốc giờ trong ngày đã được đặt kín.
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Footer Modal */}
-                  <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-300">
-                      Giờ đón hiện tại: <strong className="text-emerald-400 font-mono text-sm ml-1">{pickupTimeStr}</strong>
-                    </span>
+                  {/* 3. FOOTER CỐ ĐỊNH: Hiển thị trạng thái & Nút xác nhận to bản */}
+                  <div className="shrink-0 p-3 sm:p-4 border-t border-slate-800 bg-slate-900/95 flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] text-slate-400">Giờ đón đã chọn:</p>
+                      <p className="text-sm sm:text-base font-bold text-emerald-400 font-mono flex items-center gap-1.5 truncate">
+                        <span>{pickupTimeStr}</span>
+                        <span className="text-xs text-slate-400 font-sans font-normal truncate">({displayDate})</span>
+                      </p>
+                    </div>
 
-                    <button type="button" onClick={() => setShowScheduleModal(false)} className="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 hover:bg-slate-700 text-white cursor-pointer transition-all border border-slate-700 shadow-md">
-                      Đóng
+                    <button
+                      type="button"
+                      onClick={() => setShowScheduleModal(false)}
+                      className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white cursor-pointer shadow-lg shadow-red-950/60 active:scale-95 transition-all shrink-0"
+                    >
+                      Xác nhận & Đóng
                     </button>
                   </div>
-                </div>);
+                </>
+              );
             })()}
           </div>
         </div>,

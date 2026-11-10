@@ -60,6 +60,14 @@ export default function TripTrackingPage() {
         dropoffAddress: 'Sân bay Quốc tế Nội Bài - Nhà ga T1',
         pickupDate: '',
         pickupTime: '',
+        distanceKm: null,
+        travelTime: null,
+        waitHours: 0,
+        isRoundTrip: false,
+        luggageOption: '',
+        note: '',
+        discountCode: '',
+        discountAmount: 0,
         estimatedPrice: '320.000 đ',
         status: 'PENDING',
         statusDescription: 'Chờ xác nhận',
@@ -83,24 +91,30 @@ export default function TripTrackingPage() {
     const [copiedLink, setCopiedLink] = useState(false);
     const previousStatusRef = useRef('PENDING');
 
-    // Chuyển đổi response API sang object trip của component
+    // Chuyển đổi response API (API 2.1: GET /api/v1/trips/{code}) sang object trip của component
     const mapApiResponse = useCallback((apiData) => {
         if (!apiData) return;
 
-        // Phân tích pickupTime: "2026-11-05T09:32:00"
-        let pickupDate = '';
-        let pickupTime = '';
+        // Phân tích pickupTime: ISO string ("2026-11-10T09:00:00") hoặc trường riêng biệt
+        let pickupDate = apiData.pickupDate || '';
+        let pickupTime = apiData.pickupTimeStr || '';
         if (apiData.pickupTime) {
             try {
-                const d = new Date(apiData.pickupTime);
-                if (!isNaN(d.getTime())) {
-                    pickupDate = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    pickupTime = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                if (typeof apiData.pickupTime === 'string' && apiData.pickupTime.includes('T')) {
+                    const [dPart, tPart] = apiData.pickupTime.split('T');
+                    pickupDate = dPart;
+                    pickupTime = tPart.slice(0, 5);
+                } else {
+                    const d = new Date(apiData.pickupTime);
+                    if (!isNaN(d.getTime())) {
+                        pickupDate = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        pickupTime = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                    }
                 }
             } catch { }
         }
 
-        // Phân tích createdAt & updatedAt: "2026-11-04T17:11:00"
+        // Phân tích createdAt & updatedAt
         const formatDateTime = (isoString) => {
             if (!isoString) return '';
             try {
@@ -116,16 +130,16 @@ export default function TripTrackingPage() {
 
         const formattedCreatedAt = formatDateTime(apiData.createdAt);
         const formattedUpdatedAt = formatDateTime(apiData.updatedAt || apiData.createdAt);
-        
 
-        // Format giá tiền: 320000 -> 320.000 đ
+        // Format giá tiền: 350000 -> 350.000 đ
+        const rawFare = apiData.finalPrice ?? apiData.estimatedPrice;
         let formattedPrice = '0 đ';
-        if (apiData.estimatedPrice !== undefined && apiData.estimatedPrice !== null) {
-            if (typeof apiData.estimatedPrice === 'number') {
-                formattedPrice = new Intl.NumberFormat('vi-VN').format(apiData.estimatedPrice) + ' đ';
-            } else if (typeof apiData.estimatedPrice === 'string') {
-                const num = Number(apiData.estimatedPrice.replace(/[^0-9]/g, ''));
-                formattedPrice = !isNaN(num) && num > 0 ? new Intl.NumberFormat('vi-VN').format(num) + ' đ' : apiData.estimatedPrice;
+        if (rawFare !== undefined && rawFare !== null) {
+            if (typeof rawFare === 'number') {
+                formattedPrice = new Intl.NumberFormat('vi-VN').format(rawFare) + ' đ';
+            } else if (typeof rawFare === 'string') {
+                const num = Number(rawFare.replace(/[^0-9]/g, ''));
+                formattedPrice = !isNaN(num) && num > 0 ? new Intl.NumberFormat('vi-VN').format(num) + ' đ' : rawFare;
             }
         }
 
@@ -142,20 +156,30 @@ export default function TripTrackingPage() {
             return {
                 ...prev,
                 id: apiData.id ?? prev.id,
-                code: apiData.code || prev.code,
+                code: apiData.code || apiData.tripCode || prev.code,
+                customerName: apiData.customerName || apiData.name || prev.customerName,
+                phone: apiData.customerPhone || apiData.phone || prev.phone,
                 pickupAddress: apiData.pickupAddress || prev.pickupAddress,
                 dropoffAddress: apiData.dropoffAddress || prev.dropoffAddress,
                 pickupDate: pickupDate || prev.pickupDate,
                 pickupTime: pickupTime || prev.pickupTime,
+                distanceKm: apiData.distanceKm ?? prev.distanceKm,
+                travelTime: apiData.travelTime ?? prev.travelTime,
+                waitHours: apiData.waitHours ?? prev.waitHours,
+                isRoundTrip: apiData.isRoundTrip !== undefined ? Boolean(apiData.isRoundTrip) : prev.isRoundTrip,
+                luggageOption: apiData.luggageOption || prev.luggageOption,
+                note: apiData.note || prev.note,
+                discountCode: apiData.discountCode || prev.discountCode,
+                discountAmount: apiData.discountAmount || prev.discountAmount,
                 estimatedPrice: formattedPrice || prev.estimatedPrice,
                 status: nextStatus,
                 statusDescription: apiData.statusDescription || prev.statusDescription,
                 updatedAt: formattedUpdatedAt || prev.updatedAt,
-                createdAt: formattedCreatedAt,
+                createdAt: formattedCreatedAt || prev.createdAt,
                 driver: {
-                    name: rawDriver.name || prev.driver.name,
-                    avatar: rawDriver.avatar || prev.driver.avatar,
-                    experience: rawDriver.experience ?? prev.driver.experience,
+                    name: rawDriver.fullName || rawDriver.name || prev.driver.name,
+                    avatar: rawDriver.avatarUrl || rawDriver.avatar || prev.driver.avatar,
+                    experience: rawDriver.experienceYears ?? rawDriver.experience ?? prev.driver.experience,
                     vehicleModel: rawDriver.vehicleModel || prev.driver.vehicleModel,
                     vehicleColor: rawDriver.vehicleColor || prev.driver.vehicleColor,
                     licensePlate: rawDriver.licensePlate || prev.driver.licensePlate,
@@ -175,11 +199,18 @@ export default function TripTrackingPage() {
                     setTrip(prev => ({
                         ...prev,
                         customerName: parsed.customerName || prev.customerName,
-                        phone: parsed.phone || prev.phone,
+                        phone: parsed.customerPhone || parsed.phone || prev.phone,
                         pickupAddress: parsed.pickupAddress || prev.pickupAddress,
                         dropoffAddress: parsed.dropoffAddress || prev.dropoffAddress,
-                        pickupDate: parsed.pickupDate || prev.pickupDate,
-                        pickupTime: parsed.pickupTime || prev.pickupTime,
+                        pickupDate: parsed.pickupDate || (parsed.pickupTime && parsed.pickupTime.includes('T') ? parsed.pickupTime.split('T')[0] : prev.pickupDate),
+                        pickupTime: parsed.pickupTimeStr || (parsed.pickupTime && parsed.pickupTime.includes('T') ? parsed.pickupTime.split('T')[1].slice(0, 5) : prev.pickupTime),
+                        distanceKm: parsed.distanceKm ?? prev.distanceKm,
+                        travelTime: parsed.travelTime ?? prev.travelTime,
+                        waitHours: parsed.waitHours ?? prev.waitHours,
+                        isRoundTrip: Boolean(parsed.isRoundTrip),
+                        luggageOption: parsed.luggageOption || prev.luggageOption,
+                        note: parsed.note || prev.note,
+                        discountCode: parsed.discountCode || prev.discountCode,
                         estimatedPrice: parsed.estimatedPrice ? (new Intl.NumberFormat('vi-VN').format(parsed.estimatedPrice) + ' đ') : prev.estimatedPrice,
                     }));
                 } catch { }
@@ -556,7 +587,7 @@ export default function TripTrackingPage() {
                         </div>
                     </div>
 
-                    {/* Cột 2: Bản Tóm Tắt Lộ Trình & Giá Cước */}
+                    {/* Cột 2: Bản Tóm Tắt Lộ Trình & Giá Cước (Đồng bộ với API 2.1) */}
                     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl flex flex-col justify-between">
                         <div>
                             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
@@ -567,6 +598,16 @@ export default function TripTrackingPage() {
                                     {trip.createdAt}
                                 </span>
                             </div>
+
+                            {/* Thông tin khách hàng đặt chuyến */}
+                            {(trip.customerName || trip.phone) && (
+                                <div className="mt-3 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-xs">
+                                    <span className="text-slate-400">Khách đặt:</span>
+                                    <span className="font-semibold text-white">
+                                        {trip.customerName} {trip.phone ? `(${trip.phone})` : ''}
+                                    </span>
+                                </div>
+                            )}
 
                             <div className="mt-4 space-y-4">
                                 <div className="flex items-start gap-3">
@@ -594,6 +635,7 @@ export default function TripTrackingPage() {
                                                 {trip.dropoffAddress}
                                             </p>
                                         </div>
+
                                         {trip.pickupTime && (
                                             <div>
                                                 <p className="text-[11px] font-semibold uppercase text-sky-400">
@@ -608,9 +650,65 @@ export default function TripTrackingPage() {
                                 </div>
                             </div>
 
-                            <div className="mt-6 p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between">
+                            {/* Thông số kỹ thuật của chuyến đi từ API 2.1 */}
+                            <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-xs">
+                                {trip.distanceKm && (
+                                    <div className="p-2 rounded-lg bg-slate-950/50 border border-slate-800">
+                                        <span className="text-[10px] text-slate-400 block">Quãng đường:</span>
+                                        <span className="font-bold text-slate-200">{trip.distanceKm} km</span>
+                                    </div>
+                                )}
+                                {trip.travelTime && (
+                                    <div className="p-2 rounded-lg bg-slate-950/50 border border-slate-800">
+                                        <span className="text-[10px] text-slate-400 block">Thời gian ước tính:</span>
+                                        <span className="font-bold text-emerald-400">~{trip.travelTime} phút</span>
+                                    </div>
+                                )}
+                                <div className="p-2 rounded-lg bg-slate-950/50 border border-slate-800">
+                                    <span className="text-[10px] text-slate-400 block">Hình thức:</span>
+                                    <span className="font-bold text-rose-300">
+                                        {trip.isRoundTrip ? 'Khứ hồi (2 chiều)' : 'Một chiều'}
+                                    </span>
+                                </div>
+                                {trip.waitHours > 0 && (
+                                    <div className="p-2 rounded-lg bg-slate-950/50 border border-slate-800">
+                                        <span className="text-[10px] text-slate-400 block">Thời gian chờ:</span>
+                                        <span className="font-bold text-amber-300">{trip.waitHours} giờ</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Hành lý & Ghi chú (nếu có) */}
+                            {(trip.luggageOption || trip.note || trip.discountCode) && (
+                                <div className="mt-3 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5 text-xs">
+                                    {trip.luggageOption && (
+                                        <p className="text-slate-300 flex items-center justify-between">
+                                            <span className="text-slate-400">Hành lý:</span>
+                                            <span className="font-medium text-white">{trip.luggageOption}</span>
+                                        </p>
+                                    )}
+                                    {trip.discountCode && (
+                                        <p className="text-slate-300 flex items-center justify-between">
+                                            <span className="text-slate-400">Mã ưu đãi:</span>
+                                            <span className="font-mono font-bold text-red-400 bg-red-950/80 px-2 py-0.5 rounded border border-red-900/60 text-[11px]">
+                                                {trip.discountCode}
+                                            </span>
+                                        </p>
+                                    )}
+                                    {trip.note && (
+                                        <p className="text-slate-300 pt-1 border-t border-slate-800/80">
+                                            <span className="text-slate-400 block text-[10px] uppercase">Ghi chú:</span>
+                                            <span className="italic text-slate-200">{trip.note}</span>
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Box tổng cước phí */}
+                            <div className="mt-4 p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between">
                                 <div>
-                                    <span className="text-xs text-slate-400 block">Cước phí tạm tính:</span>
+                                    <span className="text-xs text-slate-400 block">Cước phí trọn gói:</span>
+                                    <span className="text-[10px] text-slate-500">Đã bao gồm xe riêng & dịch vụ</span>
                                 </div>
                                 <div className="text-right">
                                     <span className="text-lg sm:text-xl font-bold text-red-500">

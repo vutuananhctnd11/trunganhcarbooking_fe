@@ -14,7 +14,13 @@ export class ApiClient {
     getAuthToken() {
         if (typeof window === 'undefined')
             return null;
-        return localStorage.getItem('tac_driver_token');
+        return (
+            localStorage.getItem('tac_driver_token') ||
+            localStorage.getItem('accessToken') ||
+            localStorage.getItem('driverToken') ||
+            localStorage.getItem('token') ||
+            null
+        );
     }
     buildHeaders(customHeaders) {
         const headers = new Headers({
@@ -23,8 +29,16 @@ export class ApiClient {
             ...customHeaders,
         });
         const token = this.getAuthToken();
-        if (token && !headers.has('Authorization')) {
-            headers.set('Authorization', `Bearer ${token}`);
+        if (token) {
+            if (!headers.has('Authorization')) {
+                headers.set('Authorization', `Bearer ${token}`);
+            }
+            if (!headers.has('accessToken')) {
+                headers.set('accessToken', token);
+            }
+            if (!headers.has('token')) {
+                headers.set('token', token);
+            }
         }
         return headers;
     }

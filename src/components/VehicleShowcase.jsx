@@ -24,6 +24,14 @@ const CAR_IMAGES = [
         alt: 'Cốp xe ô tô rộng rãi sẵn sàng cho vali du lịch và công tác',
         tag: 'Khoang hành lý',
     },
+    {
+        id: 4,
+        title: 'Ngoại thất đỏ đô sang trọng, nổi bật mọi cung đường',
+        subtitle: 'Thiết kế khí động học, đèn LED hiện đại, mâm xe hợp kim 18 inch thể thao',
+        src: 'https://banggiavinfast.vn/wp-content/uploads/2025/10/Vinfast-limo-green-mau-do-3.jpg',
+        alt: 'Xe điện VinFast màu đỏ đô bóng bẩy góc 3/4',
+        tag: 'Ngoại thất xe',
+    },
 ];
 const HIGHLIGHT_SPECS = [
     {

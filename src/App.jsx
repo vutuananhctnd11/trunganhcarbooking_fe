@@ -4,6 +4,7 @@ import HomePage from './pages/HomePage';
 import TripTrackingPage from './pages/TripTrackingPage';
 import DemoMapPage from './pages/DemoMapPage';
 import DriverSchedulePage from './pages/DriverSchedulePage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
 function App() {
     return (<BrowserRouter>
       <Routes>
@@ -13,6 +14,8 @@ function App() {
         <Route path="/driver/schedule" element={<DriverSchedulePage />}/>
         <Route path="/driver" element={<Navigate to="/driver/schedule" replace/>}/>
         <Route path="/driver/login" element={<Navigate to="/driver/schedule" replace/>}/>
+        <Route path="/admin" element={<AdminDashboardPage />}/>
+        <Route path="/admin/*" element={<AdminDashboardPage />}/>
       </Routes>
     </BrowserRouter>);
 }

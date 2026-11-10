@@ -139,9 +139,15 @@ export default function PricingAndDrivers({ onSelectDriver, onSelectFixedTrip })
             onSelectFixedTrip(tripData);
         }
 
-        const bookingElement = document.getElementById('booking-section');
-        if (bookingElement) {
-            bookingElement.scrollIntoView({ behavior: 'smooth' });
+        // Ưu tiên scroll về cột Nhập Thông Tin Chuyến Xe thay vì chỉ scroll đến đỉnh bản đồ
+        const infoElement = document.getElementById('booking-trip-info');
+        if (infoElement) {
+            infoElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+            const bookingElement = document.getElementById('booking-section');
+            if (bookingElement) {
+                bookingElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
     };
 
@@ -149,9 +155,16 @@ export default function PricingAndDrivers({ onSelectDriver, onSelectFixedTrip })
         if (onSelectDriver) {
             onSelectDriver(driverId);
         }
-        const bookingElement = document.getElementById('booking-section');
-        if (bookingElement) {
-            bookingElement.scrollIntoView({ behavior: 'smooth' });
+
+        // Ưu tiên scroll về cột Nhập Thông Tin Chuyến Xe thay vì chỉ scroll đến đỉnh bản đồ
+        const infoElement = document.getElementById('booking-trip-info');
+        if (infoElement) {
+            infoElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+            const bookingElement = document.getElementById('booking-section');
+            if (bookingElement) {
+                bookingElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
     };
 
@@ -164,7 +177,7 @@ export default function PricingAndDrivers({ onSelectDriver, onSelectFixedTrip })
                         Chương trình khuyến mãi
                     </span>
                     <h2 className="text-xl sm:text-3xl font-extrabold text-white mt-2">
-                        Bảng Giá Cước các tuyến cố định
+                        Bảng giá cước các tuyến cố định
                     </h2>
                     <p className="text-xs sm:text-sm text-slate-400 mt-1">
                         Giá cước tính theo chương trình khuyến mại cho điểm đón và điểm đến nhất định.

@@ -23,7 +23,7 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
         setErrorMessage('');
         setIsLoading(true);
         try {
-            const res = await driverService.login(phone, password);
+            let res = await driverService.login(phone, password);
             if (res.success && res.driver) {
                 if (onLoginSuccess)
                     onLoginSuccess(res.driver);
@@ -31,6 +31,18 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
                 navigate('/driver/schedule');
             }
             else {
+                // Nếu phone là tài xế mẫu Trung Anh (0362882882), fallback tự động sang demo login
+                const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+                if (cleanPhone === '0362882882') {
+                    const demoDriver = await driverService.loginAsDemo();
+                    if (demoDriver && demoDriver.token) {
+                        if (onLoginSuccess)
+                            onLoginSuccess(demoDriver);
+                        onClose();
+                        navigate('/driver/schedule');
+                        return;
+                    }
+                }
                 setErrorMessage(res.message || 'Đăng nhập không thành công.');
             }
         }
@@ -41,16 +53,23 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
             setIsLoading(false);
         }
     };
-    const handleQuickLoginDefault = () => {
+    const handleQuickLoginDefault = async () => {
         setIsLoading(true);
-        setTimeout(() => {
+        try {
+            const driver = await driverService.loginAsDemo();
+            setIsLoading(false);
+            if (onLoginSuccess)
+                onLoginSuccess(driver);
+            onClose();
+            navigate('/driver/schedule');
+        } catch {
             const driver = driverService.loginAsDefault();
             setIsLoading(false);
             if (onLoginSuccess)
                 onLoginSuccess(driver);
             onClose();
             navigate('/driver/schedule');
-        }, 300);
+        }
     };
     const handleRegister = async (e) => {
         e.preventDefault();
@@ -154,23 +173,26 @@ export default function DriverAuthModal({ isOpen, onClose, onLoginSuccess }) {
 
         {/* FORM ĐĂNG NHẬP */}
         {activeTab === 'LOGIN' && (<form onSubmit={handleLogin} className="p-6 space-y-4">
-            {/* Nút 1-Click Test Tài khoản Mẫu */}
-            {/* <div className="p-3 rounded-xl bg-gradient-to-r from-red-950/40 via-slate-900 to-amber-950/30 border border-red-900/40 flex items-center justify-between gap-3">
+            {/* Nút 1-Click Test Tài khoản Mẫu có sẵn Token */}
+            <div className="p-3 rounded-xl bg-gradient-to-r from-red-950/40 via-slate-900 to-amber-950/30 border border-red-900/40 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-white truncate">Tài xế mẫu: Trung Anh (Chủ xe)</p>
-                <p className="text-[11px] text-slate-400 truncate">SĐT: 0362.882.882 • Xe VinFast VF e34</p>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <p className="text-xs font-semibold text-white truncate">Tài xế mẫu: Trung Anh (Chủ xe)</p>
+                </div>
+                <p className="text-[11px] text-slate-400 truncate">SĐT: 0362.882.882 • Tự động nhận JWT accessToken</p>
               </div>
               <button type="button" onClick={handleQuickLoginDefault} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all shadow-md shadow-red-950/50 flex-shrink-0 cursor-pointer">
-                Vào xem ngay
+                Đăng nhập mẫu
               </button>
             </div>
 
-            <div className="relative flex items-center justify-center my-3">
+            <div className="relative flex items-center justify-center my-2">
               <div className="border-t border-slate-800 w-full"/>
               <span className="bg-slate-900 px-3 text-[11px] text-slate-500 uppercase font-semibold">
-                hoặc đăng nhập bằng SĐT
+                hoặc đăng nhập bằng SĐT & Mật khẩu
               </span>
-            </div> */}
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
